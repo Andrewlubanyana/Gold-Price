@@ -3,13 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mastering Elliott Wave - Gold Chart</title>
+    <title>EWP Gold Chart (Strict & Visible)</title>
     <style>
-        /* --- CSS: DARK PROFESSIONAL THEME --- */
+        /* --- PROFESSIONAL DARK THEME --- */
         body {
-            background-color: #121212;
-            color: #e0e0e0;
-            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background-color: #000000;
+            color: #d1d4dc;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
             margin: 0;
             display: flex;
             flex-direction: column;
@@ -19,162 +19,173 @@
         }
 
         header {
-            background-color: #1e1e1e;
-            padding: 10px 20px;
+            background-color: #111;
+            border-bottom: 1px solid #333;
+            padding: 10px 15px;
             display: flex;
             justify-content: space-between;
             align-items: center;
-            border-bottom: 1px solid #333;
-            flex-shrink: 0;
+            z-index: 10;
         }
 
-        .title-group h1 {
+        .header-left h1 {
             margin: 0;
-            font-size: 1.2rem;
+            font-size: 16px;
             color: #d4af37; /* Gold */
+            font-weight: 700;
+            text-transform: uppercase;
             letter-spacing: 1px;
         }
-        .title-group span { font-size: 0.8rem; color: #777; }
 
-        .controls { display: flex; gap: 10px; }
-        
-        button {
-            background: #2a2a2a; color: #aaa;
-            border: 1px solid #333;
-            padding: 5px 12px;
+        .header-left span {
+            font-size: 11px;
+            color: #666;
+            margin-left: 10px;
+        }
+
+        .toolbar {
+            display: flex;
+            gap: 5px;
+        }
+
+        .tf-btn {
+            background: #222;
+            border: 1px solid #444;
+            color: #888;
+            padding: 4px 10px;
+            font-size: 11px;
             cursor: pointer;
-            font-size: 12px;
-            border-radius: 3px;
+            border-radius: 2px;
             transition: 0.2s;
         }
-        button:hover { background: #333; color: #fff; }
-        button.active { background: #d4af37; color: #000; border-color: #d4af37; font-weight: bold; }
 
-        .price-display { text-align: right; }
-        #current-price { font-size: 1.4rem; font-weight: bold; color: #fff; }
-        #status { font-size: 0.75rem; color: #555; }
+        .tf-btn:hover { background: #333; color: #fff; }
+        .tf-btn.active { background: #d4af37; color: #000; border-color: #d4af37; font-weight: bold; }
 
-        /* CHART CONTAINER */
-        #chart-container {
+        .price-info { text-align: right; }
+        .current-price { font-size: 18px; font-weight: bold; color: #fff; }
+        .wave-count { font-size: 11px; color: #00b0ff; }
+
+        #chart-area {
             flex-grow: 1;
             position: relative;
             cursor: crosshair;
             overflow: hidden;
         }
-        
+
         canvas { display: block; width: 100%; height: 100%; }
 
-        /* Floating Labels */
-        .float-label {
+        /* Floating Tooltips */
+        .tooltip {
             position: absolute;
-            padding: 4px 6px;
-            background: rgba(30, 30, 30, 0.9);
+            background: rgba(20, 20, 20, 0.9);
             border: 1px solid #444;
             color: #fff;
+            padding: 4px 8px;
             font-size: 11px;
             pointer-events: none;
             display: none;
             z-index: 100;
+            white-space: nowrap;
         }
+        #tip-price { right: 0; background: #d4af37; color: #000; font-weight: bold; }
+        #tip-time { bottom: 0; border-top: 1px solid #444; }
+
     </style>
 </head>
 <body>
 
     <header>
-        <div class="title-group">
-            <h1>GOLD / USD</h1>
-            <span>Strict Elliott Wave Principle (C. Brown)</span>
+        <div class="header-left">
+            <h1>Gold / USD</h1>
+            <span>Strict EWP Scanner</span>
         </div>
-        <div class="controls">
-            <button class="active" onclick="app.changeTF('1m', 1)">1m</button>
-            <button onclick="app.changeTF('15m', 15)">15m</button>
-            <button onclick="app.changeTF('1h', 60)">1H</button>
-            <button onclick="app.changeTF('4h', 240)">4H</button>
-            <button onclick="app.changeTF('1d', 1440)">1D</button>
+        <div class="toolbar">
+            <button class="tf-btn active" onclick="app.setTF('1m', 1)">1m</button>
+            <button class="tf-btn" onclick="app.setTF('15m', 15)">15m</button>
+            <button class="tf-btn" onclick="app.setTF('1h', 60)">1H</button>
+            <button class="tf-btn" onclick="app.setTF('4h', 240)">4H</button>
+            <button class="tf-btn" onclick="app.setTF('1d', 1440)">1D</button>
         </div>
-        <div class="price-display">
-            <div id="current-price">---.--</div>
-            <div id="status">Initializing...</div>
+        <div class="price-info">
+            <div class="current-price" id="price-display">---.--</div>
+            <div class="wave-count" id="debug-display">Initializing...</div>
         </div>
     </header>
 
-    <div id="chart-container">
-        <canvas id="mainCanvas"></canvas>
-        <div id="tooltip-price" class="float-label" style="right: 0;"></div>
-        <div id="tooltip-time" class="float-label" style="bottom: 0;"></div>
+    <div id="chart-area">
+        <canvas id="cvs"></canvas>
+        <div id="tip-price" class="tooltip"></div>
+        <div id="tip-time" class="tooltip"></div>
     </div>
 
     <script>
-        /**
-         * ELLIOT WAVE ENGINE - STRICT RULES IMPLEMENTATION
-         * Based on "Mastering Elliott Wave Principle"
-         */
-
-        const CONFIG = {
+        // --- CONFIGURATION ---
+        const CFG = {
             colors: {
-                bg: '#121212',
-                grid: '#1f1f1f',
-                candleUp: '#089981',
-                candleDown: '#f23645',
+                bg: '#000000',
+                grid: '#1a1a1a',
+                up: '#089981',
+                down: '#f23645',
                 text: '#666',
-                impulseLabel: '#00b0ff', // Blue for 1-2-3-4-5
-                correctLabel: '#ff9800'  // Orange for A-B-C
+                labelImpulse: '#00b0ff', // Blue for 1-2-3-4-5
+                labelCorrect: '#ff9800'  // Orange for A-B-C
             },
-            padding: { right: 60, bottom: 25 },
-            minCandleWidth: 2,
-            maxCandleWidth: 100
+            padRight: 60,
+            padBottom: 30
         };
 
-        class App {
+        class ChartEngine {
             constructor() {
                 this.data = [];
-                this.waves = [];
+                this.pivots = [];
+                this.patterns = [];
                 
                 this.view = {
                     tf: '1m', agg: 1,
                     offset: 0,
-                    zoom: 10,
+                    zoom: 8, // Candle Width
                     scaleY: 1.0,
                     shiftY: 0,
                     autoScale: true
                 };
 
-                this.input = { dragging: false, lastX: 0, mouseX: 0, mouseY: 0 };
+                this.input = { dragging: false, lastX: 0, lastY: 0, mx: 0, my: 0 };
                 
                 this.dom = {
-                    cvs: document.getElementById('mainCanvas'),
-                    ctx: document.getElementById('mainCanvas').getContext('2d', { alpha: false }),
-                    cnt: document.getElementById('chart-container'),
-                    price: document.getElementById('current-price'),
-                    status: document.getElementById('status'),
-                    tipP: document.getElementById('tooltip-price'),
-                    tipT: document.getElementById('tooltip-time')
+                    div: document.getElementById('chart-area'),
+                    cvs: document.getElementById('cvs'),
+                    ctx: document.getElementById('cvs').getContext('2d', {alpha:false}),
+                    price: document.getElementById('price-display'),
+                    debug: document.getElementById('debug-display'),
+                    tp: document.getElementById('tip-price'),
+                    tt: document.getElementById('tip-time'),
+                    btns: document.querySelectorAll('.tf-btn')
                 };
 
-                this.initEvents();
+                this.initListeners();
                 this.resize();
                 this.fetchData();
             }
 
-            // --- 1. DATA FETCHING ---
-            async changeTF(tf, agg) {
+            // --- 1. DATA API ---
+            async setTF(tf, agg) {
                 this.view.tf = tf; this.view.agg = agg;
-                document.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+                this.dom.btns.forEach(b => b.classList.remove('active'));
                 event.target.classList.add('active');
                 await this.fetchData();
             }
 
             async fetchData() {
-                this.dom.status.innerText = "Analyzing Market Structure...";
+                this.dom.debug.innerText = "Loading...";
                 try {
+                    // Using CryptoCompare PAXG (Gold Token)
                     let ep = 'histominute';
-                    let limit = 2000;
                     let agg = this.view.agg;
-                    
-                    if(agg >= 60) { ep = 'histohour'; agg /= 60; }
-                    if(agg >= 1440) { ep = 'histoday'; agg = 1; }
+                    if(agg >= 60) { ep = 'histohour'; agg/=60; }
+                    if(agg >= 1440) { ep = 'histoday'; agg=1; }
 
-                    const url = `https://min-api.cryptocompare.com/data/v2/${ep}?fsym=PAXG&tsym=USD&limit=${limit}&aggregate=${agg}`;
+                    const url = `https://min-api.cryptocompare.com/data/v2/${ep}?fsym=PAXG&tsym=USD&limit=2000&aggregate=${agg}`;
                     const res = await fetch(url);
                     const json = await res.json();
 
@@ -183,360 +194,392 @@
                             t: d.time, o: d.open, h: d.high, l: d.low, c: d.close
                         }));
                         
-                        // Initial Setup
-                        this.view.offset = 0;
                         this.dom.price.innerText = this.data[this.data.length-1].c.toFixed(2);
-                        this.dom.status.innerText = "Live";
+                        this.view.offset = 0; // Reset to live
+                        this.view.autoScale = true;
                         
-                        this.runElliotWaveEngine();
+                        this.analyzeWaves();
                         this.draw();
+                    } else {
+                        throw new Error("API Error");
                     }
                 } catch(e) {
-                    this.dom.status.innerText = "Data Error (Check Connection)";
-                    console.error(e);
+                    this.dom.debug.innerText = "Offline / Simulation Mode";
+                    this.generateSimData();
                 }
             }
 
-            // --- 2. ELLIOT WAVE LOGIC (THE BRAIN) ---
-            runElliotWaveEngine() {
-                if(this.data.length < 20) return;
-                this.waves = [];
+            generateSimData() {
+                this.data = [];
+                let p = 2000;
+                // Generate a clear 5 wave structure for demo
+                for(let i=0; i<300; i++) {
+                    // Random walk with trend
+                    let move = (Math.random()-0.45) * 2; 
+                    p += move;
+                    this.data.push({t: i*3600, o: p, h: p+1, l: p-1, c: p+move});
+                }
+                this.analyzeWaves();
+                this.draw();
+            }
 
-                // A. IDENTIFY PIVOTS (ZigZag)
-                // Filter "Swings" from noise (Page 13)
-                // We use a dynamic deviation based on the volatility of the visible range
-                const pivots = this.getPivots(this.data, 5); // 5-bar lookback for sensitivity
-
-                // B. PATTERN RECOGNITION (Iterate Pivots)
-                // We look for 5-wave Impulse sequences followed by 3-wave Corrections
+            // --- 2. ELLIOT WAVE ENGINE (Strict) ---
+            analyzeWaves() {
+                if(this.data.length < 10) return;
                 
-                let i = 0;
-                while(i < pivots.length - 8) { // Need enough points for 1-5 and A-B-C
+                // A. Find Pivots (ZigZag)
+                // Use a depth-based lookback. A high is a high if it's highest of N bars left and right.
+                // We use a small depth (3) to catch smaller waves, relying on logic to filter.
+                const depth = 3; 
+                this.pivots = [];
+                
+                for(let i=depth; i<this.data.length-depth; i++) {
+                    const cur = this.data[i];
                     
-                    // Attempt to find Bullish Impulse (1-2-3-4-5)
-                    const p0 = pivots[i];
-                    const p1 = pivots[i+1];
-                    const p2 = pivots[i+2];
-                    const p3 = pivots[i+3];
-                    const p4 = pivots[i+4];
-                    const p5 = pivots[i+5];
-
-                    // Direction Check: Low-High-Low-High-Low-High
-                    if(p1.v > p0.v && p2.v < p1.v && p3.v > p2.v && p4.v < p3.v && p5.v > p4.v) {
-                        
-                        // --- RULE 1: Wave 2 cannot retrace 100% of Wave 1 ---
-                        if(p2.v <= p0.v) { i++; continue; }
-
-                        // --- RULE 3: Wave 4 cannot overlap Wave 1 ---
-                        // (Strict adherence as per user request)
-                        if(p4.v <= p1.v) { i++; continue; }
-
-                        // --- RULE 2: Wave 3 cannot be the shortest ---
-                        const len1 = Math.abs(p1.v - p0.v);
-                        const len3 = Math.abs(p3.v - p2.v);
-                        const len5 = Math.abs(p5.v - p4.v);
-                        if(len3 < len1 && len3 < len5) { i++; continue; }
-
-                        // If valid, register the Impulse
-                        this.waves.push({ type: 'impulse', pts: [p1, p2, p3, p4, p5] });
-                        
-                        // Look for Correction (A-B-C) immediately following
-                        const pa = pivots[i+6];
-                        const pb = pivots[i+7];
-                        const pc = pivots[i+8];
-
-                        // Simple Check: Down-Up-Down
-                        if(pa.v < p5.v && pb.v > pa.v && pc.v < pb.v) {
-                            // Check Zigzag rule: B usually doesn't exceed start of A (Wave 5)
-                            // Allowing Flats (where B ends near 5)
-                            if(pb.v < p5.v * 1.01) { 
-                                this.waves.push({ type: 'correct', pts: [pa, pb, pc] });
-                                i += 8; // Skip identified patterns
-                                continue;
-                            }
-                        }
-                        
-                        i += 5; // Skip the impulse
-                        continue;
+                    // Check High
+                    let isH = true;
+                    for(let k=1; k<=depth; k++) {
+                        if(this.data[i-k].h >= cur.h || this.data[i+k].h >= cur.h) isH = false;
                     }
+                    if(isH) this.pivots.push({idx: i, val: cur.h, type: 'H'});
 
-                    // Attempt Bearish Impulse (Inverse Rules)
-                    if(p1.v < p0.v && p2.v > p1.v && p3.v < p2.v && p4.v > p3.v && p5.v < p4.v) {
-                        // Rule 1
-                        if(p2.v >= p0.v) { i++; continue; }
-                        // Rule 3
-                        if(p4.v >= p1.v) { i++; continue; }
-                        // Rule 2
-                        const len1 = Math.abs(p0.v - p1.v);
-                        const len3 = Math.abs(p2.v - p3.v);
-                        const len5 = Math.abs(p4.v - p5.v);
-                        if(len3 < len1 && len3 < len5) { i++; continue; }
-
-                        this.waves.push({ type: 'impulse_bear', pts: [p1, p2, p3, p4, p5] });
-                        i += 5;
-                        continue;
+                    // Check Low
+                    let isL = true;
+                    for(let k=1; k<=depth; k++) {
+                        if(this.data[i-k].l <= cur.l || this.data[i+k].l <= cur.l) isL = false;
                     }
+                    if(isL) this.pivots.push({idx: i, val: cur.l, type: 'L'});
+                }
 
-                    i++;
+                // Sort by index just in case
+                this.pivots.sort((a,b) => a.idx - b.idx);
+
+                // B. Detect Patterns
+                this.patterns = [];
+                
+                // We scan EVERY pivot as a potential starting point
+                for(let i=0; i<this.pivots.length; i++) {
+                    this.checkImpulse(i);
+                    this.checkCorrection(i);
+                }
+
+                // C. Clean Up Overlaps (Optional: For now we show all valid patterns)
+                // We filter out very small patterns inside larger ones if they clutter
+                this.dom.debug.innerText = `EWP Analysis: ${this.patterns.length} Patterns Found`;
+            }
+
+            checkImpulse(startIndex) {
+                // Need at least 6 pivots (Start + 5 points)
+                if(startIndex + 5 >= this.pivots.length) return;
+
+                const p0 = this.pivots[startIndex];
+                const p1 = this.pivots[startIndex+1];
+                const p2 = this.pivots[startIndex+2];
+                const p3 = this.pivots[startIndex+3];
+                const p4 = this.pivots[startIndex+4];
+                const p5 = this.pivots[startIndex+5];
+
+                // 1. Alternation Check (Must be H-L-H-L... or L-H-L-H...)
+                if(p0.type === p1.type) return; 
+
+                const isBull = p1.val > p0.val;
+
+                if(isBull) {
+                    // Structure: Low(0) -> High(1) -> Low(2) -> High(3) -> Low(4) -> High(5)
+                    if(p1.type !== 'H' || p2.type !== 'L' || p3.type !== 'H' || p4.type !== 'L' || p5.type !== 'H') return;
+                    if(p2.val <= p0.val) return; // Rule 1: W2 can't retrace 100% of W1
+                    if(p3.val <= p1.val) return; // W3 must go higher than W1
+                    if(p4.val <= p1.val) return; // Rule 3: W4 cannot overlap W1 (Strict)
+                    if(p5.val <= p3.val) return; // W5 must go higher (Truncation is rare, ignoring for basic)
+                    
+                    // Rule 2: W3 not shortest
+                    const len1 = Math.abs(p1.val - p0.val);
+                    const len3 = Math.abs(p3.val - p2.val);
+                    const len5 = Math.abs(p5.val - p4.val);
+                    if(len3 < len1 && len3 < len5) return;
+
+                    // Found Bullish Impulse
+                    this.patterns.push({
+                        type: 'impulse_bull',
+                        points: [p1, p2, p3, p4, p5]
+                    });
+
+                } else {
+                    // Bearish
+                    if(p1.type !== 'L' || p2.type !== 'H' || p3.type !== 'L' || p4.type !== 'H' || p5.type !== 'L') return;
+                    if(p2.val >= p0.val) return;
+                    if(p3.val >= p1.val) return;
+                    if(p4.val >= p1.val) return; // Overlap Rule
+                    if(p5.val >= p3.val) return;
+
+                    const len1 = Math.abs(p1.val - p0.val);
+                    const len3 = Math.abs(p3.val - p2.val);
+                    const len5 = Math.abs(p5.val - p4.val);
+                    if(len3 < len1 && len3 < len5) return;
+
+                    this.patterns.push({
+                        type: 'impulse_bear',
+                        points: [p1, p2, p3, p4, p5]
+                    });
                 }
             }
 
-            getPivots(data, leftRightBars) {
-                // Simplified Swing detection
-                let pivots = [];
-                for(let i = leftRightBars; i < data.length - leftRightBars; i++) {
-                    const high = data[i].h;
-                    const low = data[i].l;
-                    
-                    // Is Pivot High?
-                    let isHigh = true;
-                    for(let k=1; k<=leftRightBars; k++) {
-                        if(data[i-k].h > high || data[i+k].h > high) isHigh = false;
-                    }
-                    if(isHigh) pivots.push({ i: i, v: high, type: 'H' });
+            checkCorrection(startIndex) {
+                // ZigZags (A-B-C) - 3 points after start
+                if(startIndex + 3 >= this.pivots.length) return;
 
-                    // Is Pivot Low?
-                    let isLow = true;
-                    for(let k=1; k<=leftRightBars; k++) {
-                        if(data[i-k].l < low || data[i+k].l < low) isLow = false;
-                    }
-                    if(isLow) pivots.push({ i: i, v: low, type: 'L' });
+                const p0 = this.pivots[startIndex];
+                const pa = this.pivots[startIndex+1];
+                const pb = this.pivots[startIndex+2];
+                const pc = this.pivots[startIndex+3];
+
+                const isBull = pa.val > p0.val; // Correction moving UP (in a downtrend) or simply A-B-C up
+
+                if(isBull) {
+                    // A(Up), B(Down), C(Up)
+                    if(pa.val <= p0.val) return;
+                    if(pb.val <= p0.val) return; // B shouldn't retrace > 100% of A (usually)
+                    if(pc.val <= pa.val) return; // C should go above A
+                    
+                    // Basic geometry: C is often equal to A or 1.618 of A. 
+                    // We just check direction here for "Figures" display.
+                    
+                    // Filter: Ensure it looks corrective (B retraces at least a bit)
+                    if(pb.val > pa.val) return;
+
+                    this.patterns.push({
+                        type: 'correct_bull',
+                        points: [pa, pb, pc]
+                    });
+                } else {
+                    // A(Down), B(Up), C(Down)
+                    if(pa.val >= p0.val) return;
+                    if(pb.val >= p0.val) return;
+                    if(pc.val >= pa.val) return;
+                    if(pb.val < pa.val) return;
+
+                    this.patterns.push({
+                        type: 'correct_bear',
+                        points: [pa, pb, pc]
+                    });
                 }
-                return pivots;
             }
 
-            // --- 3. RENDERING ENGINE ---
+            // --- 3. RENDERING ---
             draw() {
                 const ctx = this.dom.ctx;
-                const W = this.dom.cnt.clientWidth;
-                const H = this.dom.cnt.clientHeight;
+                const W = this.dom.div.clientWidth;
+                const H = this.dom.div.clientHeight;
                 
-                // Reset
-                ctx.fillStyle = CONFIG.colors.bg;
+                // Background
+                ctx.fillStyle = CFG.colors.bg;
                 ctx.fillRect(0,0,W,H);
-                
+
                 if(this.data.length === 0) return;
 
-                // Viewport Calculations
-                const chartW = W - CONFIG.padding.right;
-                const chartH = H - CONFIG.padding.bottom;
+                // A. Viewport Math
+                const chartW = W - CFG.padRight;
+                const chartH = H - CFG.padBottom;
                 const zoom = this.view.zoom;
                 
-                const visibleBars = Math.floor(chartW / zoom);
+                // Determine visible bars
+                const barsVisible = Math.ceil(chartW / zoom);
                 let endIdx = this.data.length - 1 - Math.floor(this.view.offset);
-                let startIdx = endIdx - visibleBars;
-                if(endIdx >= this.data.length) endIdx = this.data.length - 1;
+                let startIdx = endIdx - barsVisible;
+                if(endIdx > this.data.length-1) endIdx = this.data.length-1;
                 if(startIdx < 0) startIdx = 0;
 
-                const viewData = this.data.slice(startIdx, endIdx + 1);
+                const viewData = this.data.slice(startIdx, endIdx+1);
                 
-                // Y-Axis Scaling
+                // Y-Axis Scale
                 let min = Infinity, max = -Infinity;
                 for(let d of viewData) {
                     if(d.l < min) min = d.l;
                     if(d.h > max) max = d.h;
                 }
                 
-                // Auto Scale Logic
                 if(this.view.autoScale) {
-                    const pad = (max - min) * 0.1;
-                    this.minP = min - pad;
-                    this.maxP = max + pad;
+                    let pad = (max - min) * 0.15;
+                    this.minP = min - pad; this.maxP = max + pad;
                 } else {
-                    const mid = (min + max) / 2 + this.view.shiftY;
-                    const range = (max - min) / this.view.scaleY;
-                    this.minP = mid - range/2;
-                    this.maxP = mid + range/2;
+                    let mid = (min+max)/2 + this.view.shiftY;
+                    let rng = (max-min)/this.view.scaleY;
+                    this.minP = mid - rng/2; this.maxP = mid + rng/2;
                 }
                 const pRange = this.maxP - this.minP;
 
-                // Coordinate Converters
+                // Transform Helpers
                 const toX = (i) => chartW - ((endIdx - i + 0.5) * zoom);
                 const toY = (p) => chartH - ((p - this.minP) / pRange * chartH);
 
-                // --- LAYERS ---
-
-                // 1. Grid
-                ctx.strokeStyle = CONFIG.colors.grid;
+                // B. Draw Grid & Time Axis
+                ctx.strokeStyle = CFG.colors.grid;
                 ctx.lineWidth = 1;
                 ctx.beginPath();
-                // Price Grid
+                
+                // Price Lines
                 for(let i=0; i<6; i++) {
                     let p = this.minP + (pRange * (i/5));
                     let y = toY(p);
-                    ctx.moveTo(0, y); ctx.lineTo(chartW, y);
-                    // Axis Label
-                    ctx.fillStyle = CONFIG.colors.text;
+                    ctx.moveTo(0,y); ctx.lineTo(chartW,y);
+                    // Label
+                    ctx.fillStyle = CFG.colors.text;
                     ctx.font = "11px Arial";
-                    ctx.fillText(p.toFixed(2), chartW + 5, y + 4);
+                    ctx.fillText(p.toFixed(2), chartW+5, y+4);
                 }
-                ctx.stroke();
-
-                // 2. Dynamic Date/Time Axis
-                ctx.beginPath();
-                const timeStep = Math.max(1, Math.floor(100 / zoom)); // Don't overlap text
-                for(let i = startIdx; i <= endIdx; i++) {
-                    if(i % timeStep === 0) {
+                
+                // Time Lines & Labels
+                let pixelsPerGrid = 120;
+                let barsPerGrid = Math.ceil(pixelsPerGrid / zoom);
+                
+                for(let i=startIdx; i<=endIdx; i++) {
+                    // Draw grid approx every N pixels
+                    // Align to nearest logical time if possible (simplified here to index)
+                    if(i % barsPerGrid === 0) {
                         let x = toX(i);
-                        let date = new Date(this.data[i].t * 1000);
-                        let label = "";
+                        ctx.moveTo(x, 0); ctx.lineTo(x, chartH);
                         
-                        // Dynamic Format based on zoom/TF
-                        if(this.view.tf === '1d') {
-                            label = `${date.getDate()}/${date.getMonth()+1}`; // D/M
-                        } else {
-                            let hrs = date.getHours().toString().padStart(2,'0');
-                            let min = date.getMinutes().toString().padStart(2,'0');
-                            label = `${hrs}:${min}`;
-                            if(hrs === '00' && min === '00') label = `${date.getDate()}/${date.getMonth()+1}`;
-                        }
-
-                        ctx.moveTo(x, 0); ctx.lineTo(x, chartH + 5);
-                        ctx.fillStyle = CONFIG.colors.text;
-                        ctx.fillText(label, x - 10, chartH + 15);
+                        // Date Label
+                        let date = new Date(this.data[i].t * 1000);
+                        let txt = "";
+                        if(this.view.tf === '1d') txt = (date.getMonth()+1) + "/" + date.getDate();
+                        else txt = date.getHours() + ":" + (date.getMinutes()<10?'0':'') + date.getMinutes();
+                        
+                        ctx.fillText(txt, x-10, chartH + 15);
                     }
                 }
-                ctx.strokeStyle = '#222';
                 ctx.stroke();
 
-                // 3. Candles
-                const bodyW = Math.max(1, zoom * 0.8);
+                // C. Draw Candles
+                const bw = Math.max(1, zoom * 0.7);
                 for(let i=startIdx; i<=endIdx; i++) {
-                    const d = this.data[i];
-                    const x = toX(i);
-                    const yO = toY(d.o);
-                    const yC = toY(d.c);
-                    const yH = toY(d.h);
-                    const yL = toY(d.l);
-
-                    ctx.fillStyle = d.c >= d.o ? CONFIG.colors.candleUp : CONFIG.colors.candleDown;
+                    let d = this.data[i];
+                    let x = toX(i);
+                    let yO = toY(d.o); let yC = toY(d.c);
+                    let yH = toY(d.h); let yL = toY(d.l);
+                    
+                    ctx.fillStyle = d.c >= d.o ? CFG.colors.up : CFG.colors.down;
                     ctx.strokeStyle = ctx.fillStyle;
-
+                    
                     ctx.beginPath();
                     ctx.moveTo(x, yH); ctx.lineTo(x, yL);
                     ctx.stroke();
-                    ctx.fillRect(x - bodyW/2, Math.min(yO, yC), bodyW, Math.max(1, Math.abs(yO-yC)));
+                    ctx.fillRect(x - bw/2, Math.min(yO, yC), bw, Math.max(1, Math.abs(yO-yC)));
                 }
 
-                // 4. ELLIOT WAVE FIGURES (No Lines)
+                // D. Draw EWP Labels (Figures Only - No Lines)
                 ctx.font = "bold 13px Arial";
                 ctx.textAlign = "center";
 
-                for(let wave of this.waves) {
-                    const isImpulse = wave.type.includes('impulse');
-                    const color = isImpulse ? CONFIG.colors.impulseLabel : CONFIG.colors.correctLabel;
-                    const labels = isImpulse ? ['1','2','3','4','5'] : ['A','B','C'];
+                // Filter patterns to only show those relevant to current view
+                // Optimization: Don't draw labels way off screen
+                
+                this.patterns.forEach(pat => {
+                    let isImpulse = pat.type.includes('impulse');
+                    let labels = isImpulse ? ['1','2','3','4','5'] : ['A','B','C'];
+                    let color = isImpulse ? CFG.colors.labelImpulse : CFG.colors.labelCorrect;
                     
-                    // Offset labels: Bullish numbers below low/above high
-                    // Simple heuristic: If point is High, text above. If Low, text below.
-                    
-                    wave.pts.forEach((pt, idx) => {
-                        if(pt.i >= startIdx && pt.i <= endIdx) {
-                            const x = toX(pt.i);
-                            const y = toY(pt.v);
-                            
-                            // Determine if this pivot is a High or Low relative to neighbors
-                            // (Simplified for this view)
-                            const isHigh = pt.type === 'H';
-                            const yOffset = isHigh ? -12 : 20;
+                    // Check if pattern is visible
+                    let visiblePoints = pat.points.filter(p => p.idx >= startIdx && p.idx <= endIdx);
+                    if(visiblePoints.length === 0) return;
 
+                    pat.points.forEach((pt, k) => {
+                        if(pt.idx >= startIdx && pt.idx <= endIdx) {
+                            let x = toX(pt.idx);
+                            let y = toY(pt.val);
+                            
+                            // Offset label slightly
+                            let offset = (pt.type === 'H') ? -15 : 20;
+                            
                             ctx.fillStyle = color;
-                            ctx.fillText(labels[idx], x, y + yOffset);
+                            ctx.fillText(labels[k], x, y + offset);
                         }
                     });
-                }
+                });
 
-                // 5. Crosshair
-                const mx = this.input.mouseX;
-                const my = this.input.mouseY;
-                if(mx > 0 && mx < chartW && my > 0 && my < chartH) {
-                    ctx.strokeStyle = '#fff';
+                // E. Crosshair
+                if(this.input.mx > 0 && this.input.mx < chartW && this.input.my > 0 && this.input.my < chartH) {
+                    ctx.strokeStyle = "#fff";
                     ctx.setLineDash([4,4]);
                     ctx.beginPath();
-                    ctx.moveTo(0, my); ctx.lineTo(chartW, my);
-                    ctx.moveTo(mx, 0); ctx.lineTo(mx, chartH);
+                    ctx.moveTo(0, this.input.my); ctx.lineTo(chartW, this.input.my);
+                    ctx.moveTo(this.input.mx, 0); ctx.lineTo(this.input.mx, chartH);
                     ctx.stroke();
                     ctx.setLineDash([]);
-
-                    // Tooltip Logic
-                    const price = this.maxP - ((my / chartH) * pRange);
-                    this.dom.tipP.style.display = "block";
-                    this.dom.tipP.style.top = (my - 10) + "px";
-                    this.dom.tipP.innerText = price.toFixed(2);
-
-                    // Inverse X to Index
-                    // x = chartW - ((endIdx - i + 0.5) * zoom)
-                    // i = endIdx + 0.5 - (chartW - x) / zoom
-                    const idx = Math.round(endIdx + 0.5 - (chartW - mx) / zoom);
-                    if(this.data[idx]) {
-                        const d = new Date(this.data[idx].t * 1000);
-                        this.dom.tipT.style.display = "block";
-                        this.dom.tipT.style.left = (mx - 40) + "px";
-                        this.dom.tipT.innerText = d.toLocaleString();
+                    
+                    // Tooltips
+                    let price = this.maxP - ((this.input.my/chartH) * pRange);
+                    this.dom.tp.style.display = 'block';
+                    this.dom.tp.style.top = (this.input.my - 10) + "px";
+                    this.dom.tp.innerText = price.toFixed(2);
+                    
+                    // Time
+                    let barsFromRight = (chartW - this.input.mx) / zoom;
+                    let dataIdx = Math.round(endIdx - barsFromRight + 0.5);
+                    if(this.data[dataIdx]) {
+                        let d = new Date(this.data[dataIdx].t * 1000);
+                        this.dom.tt.style.display = 'block';
+                        this.dom.tt.style.left = (this.input.mx - 25) + "px";
+                        this.dom.tt.innerText = d.toLocaleString();
                     }
                 } else {
-                    this.dom.tipP.style.display = "none";
-                    this.dom.tipT.style.display = "none";
+                    this.dom.tp.style.display = 'none';
+                    this.dom.tt.style.display = 'none';
                 }
             }
 
             // --- 4. INTERACTION ---
-            initEvents() {
-                const c = this.dom.cnt;
+            initListeners() {
+                const el = this.dom.div;
                 
-                c.addEventListener('mousedown', e => {
-                    const rect = c.getBoundingClientRect();
-                    const x = e.clientX - rect.left;
-                    if(x > c.clientWidth - CONFIG.padding.right) {
-                        this.view.autoScale = false; // Manual scale
-                        c.style.cursor = 'ns-resize';
+                el.addEventListener('mousedown', e => {
+                    const r = el.getBoundingClientRect();
+                    const x = e.clientX - r.left;
+                    if(x > el.clientWidth - CFG.padRight) {
+                        this.view.autoScale = false;
+                        el.style.cursor = 'ns-resize';
                     } else {
                         this.input.dragging = true;
-                        c.style.cursor = 'grabbing';
+                        el.style.cursor = 'grabbing';
                     }
-                    this.input.lastX = e.clientX;
-                    this.input.lastY = e.clientY;
+                    this.input.lastX = e.clientX; this.input.lastY = e.clientY;
                 });
 
                 window.addEventListener('mouseup', () => {
                     this.input.dragging = false;
-                    c.style.cursor = 'crosshair';
+                    el.style.cursor = 'crosshair';
                 });
 
-                c.addEventListener('mousemove', e => {
-                    const rect = c.getBoundingClientRect();
-                    this.input.mouseX = e.clientX - rect.left;
-                    this.input.mouseY = e.clientY - rect.top;
+                el.addEventListener('mousemove', e => {
+                    const r = el.getBoundingClientRect();
+                    this.input.mx = e.clientX - r.left;
+                    this.input.my = e.clientY - r.top;
                     
                     const dx = e.clientX - this.input.lastX;
                     const dy = e.clientY - this.input.lastY;
-                    this.input.lastX = e.clientX;
-                    this.input.lastY = e.clientY;
+                    this.input.lastX = e.clientX; this.input.lastY = e.clientY;
 
                     if(this.input.dragging) {
                         this.view.offset += dx / this.view.zoom;
                         if(this.view.offset < 0) this.view.offset = 0;
-                    } else if (!this.view.autoScale && e.buttons === 1) {
-                        // Manual Y Drag
+                    } else if(!this.view.autoScale && e.buttons === 1) {
+                        // Scale Drag
                         this.view.scaleY += dy * -0.01;
                         if(this.view.scaleY < 0.1) this.view.scaleY = 0.1;
                     }
-                    
                     this.draw();
                 });
 
-                c.addEventListener('wheel', e => {
+                el.addEventListener('wheel', e => {
                     e.preventDefault();
                     this.view.zoom += (e.deltaY < 0 ? 1 : -1);
-                    if(this.view.zoom < CONFIG.minCandleWidth) this.view.zoom = CONFIG.minCandleWidth;
-                    if(this.view.zoom > CONFIG.maxCandleWidth) this.view.zoom = CONFIG.maxCandleWidth;
+                    if(this.view.zoom < 2) this.view.zoom = 2;
+                    if(this.view.zoom > 100) this.view.zoom = 100;
                     this.draw();
-                }, { passive: false });
+                }, {passive:false});
 
-                c.addEventListener('dblclick', () => {
-                    this.view.autoScale = true;
-                    this.view.scaleY = 1.0;
-                    this.view.shiftY = 0;
+                el.addEventListener('dblclick', () => {
+                    this.view.autoScale = true; this.view.scaleY = 1.0; this.view.shiftY = 0;
                     this.draw();
                 });
 
@@ -544,15 +587,13 @@
             }
 
             resize() {
-                this.dom.cvs.width = this.dom.cnt.clientWidth;
-                this.dom.cvs.height = this.dom.cnt.clientHeight;
+                this.dom.cvs.width = this.dom.div.clientWidth;
+                this.dom.cvs.height = this.dom.div.clientHeight;
                 this.draw();
             }
         }
 
-        // Start Application
-        const app = new App();
-
+        const app = new ChartEngine();
     </script>
 </body>
 </html>
