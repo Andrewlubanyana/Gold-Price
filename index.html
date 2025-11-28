@@ -3,14 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Live Gold Chart (Resilient)</title>
-    <!-- Using Cloudflare CDN for better reliability -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/lightweight-charts/4.1.1/lightweight-charts.standalone.production.min.js"></script>
+    <title>Gold Chart (Zero-Dependency)</title>
     <style>
         body {
             background-color: #121212;
             color: #e0e0e0;
-            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            font-family: 'Segoe UI', Roboto, monospace;
             margin: 0;
             display: flex;
             flex-direction: column;
@@ -25,284 +23,340 @@
             justify-content: space-between;
             align-items: center;
             border-bottom: 1px solid #333;
+            flex-shrink: 0;
         }
 
-        .title-group h1 {
-            margin: 0;
-            font-size: 1.5rem;
-            color: #d4af37; /* Gold */
-            letter-spacing: 1px;
-        }
+        h1 { margin: 0; font-size: 1.5rem; color: #d4af37; letter-spacing: 1px; }
+        .sub-text { font-size: 0.8rem; color: #888; }
+        .price-big { font-size: 1.8rem; font-weight: bold; color: #fff; text-align: right;}
+        .status-text { font-size: 0.75rem; text-align: right; }
+        .st-live { color: #00e676; }
+        .st-sim { color: #ff9100; }
 
-        .title-group span {
-            font-size: 0.8rem;
-            color: #888;
-        }
-
-        .price-group {
-            text-align: right;
-        }
-
-        #current-price {
-            font-size: 1.8rem;
-            font-weight: bold;
-            color: #fff;
-        }
-
-        #connection-status {
-            font-size: 0.8rem;
-            font-weight: 500;
-        }
-
-        .status-live { color: #00e676; } /* Green */
-        .status-sim { color: #ff9100; }  /* Orange */
-        .status-err { color: #ff1744; }  /* Red */
-
+        /* The Chart Container */
         #chart-wrapper {
             flex-grow: 1;
             position: relative;
+            background-color: #121212;
             width: 100%;
+            overflow: hidden;
+            cursor: crosshair;
         }
 
-        /* Debug Console at the bottom */
-        #debug-console {
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        #tooltip {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0,0,0,0.7);
+            color: #ddd;
+            padding: 5px;
+            pointer-events: none;
+            font-size: 12px;
+            display: none;
+            border: 1px solid #444;
+        }
+
+        #debug {
             height: 100px;
             background: #000;
-            color: #00ff00;
-            font-family: monospace;
-            font-size: 11px;
-            padding: 10px;
+            color: #0f0;
+            font-size: 10px;
+            padding: 5px;
             overflow-y: auto;
             border-top: 1px solid #333;
+            flex-shrink: 0;
         }
     </style>
 </head>
 <body>
 
     <header>
-        <div class="title-group">
+        <div>
             <h1>GOLD / USD</h1>
-            <span id="data-source-label">Initializing...</span>
+            <div class="sub-text" id="source-label">System Initializing...</div>
         </div>
-        <div class="price-group">
-            <div id="current-price">---.--</div>
-            <div id="connection-status">Connecting...</div>
+        <div>
+            <div class="price-big" id="price-display">---.--</div>
+            <div class="status-text" id="status-display">Waiting...</div>
         </div>
     </header>
 
-    <div id="chart-wrapper"></div>
-
-    <div id="debug-console">
-        <div>> System initialized.</div>
-        <div>> Loading Chart Library...</div>
+    <div id="chart-wrapper">
+        <canvas id="mainCanvas"></canvas>
+        <div id="tooltip"></div>
     </div>
 
+    <div id="debug"></div>
+
     <script>
-        // --- UTILITIES ---
-        const logDiv = document.getElementById('debug-console');
+        // --- 1. SYSTEM LOGGING ---
+        const debugBox = document.getElementById('debug');
         function log(msg) {
-            const div = document.createElement('div');
-            div.textContent = `> ${msg}`;
-            logDiv.appendChild(div);
-            logDiv.scrollTop = logDiv.scrollHeight;
+            const d = document.createElement('div');
+            d.textContent = `> ${msg}`;
+            debugBox.appendChild(d);
+            debugBox.scrollTop = debugBox.scrollHeight;
             console.log(msg);
         }
+        log("System started. Using internal Canvas renderer (No libraries).");
 
-        // --- CHART SETUP ---
-        const chartContainer = document.getElementById('chart-wrapper');
+        // --- 2. CUSTOM CHART ENGINE (Native HTML5) ---
+        const canvas = document.getElementById('mainCanvas');
+        const ctx = canvas.getContext('2d');
+        const wrapper = document.getElementById('chart-wrapper');
+        const tooltip = document.getElementById('tooltip');
         
-        let chart;
-        let candleSeries;
+        // Chart State
+        let candles = []; // Array of {time, open, high, low, close}
+        let visibleCandles = 60; // How many candles to show at once
+        let width = 0;
+        let height = 0;
 
-        try {
-            chart = LightweightCharts.createChart(chartContainer, {
-                layout: {
-                    background: { type: 'solid', color: '#121212' },
-                    textColor: '#d1d4dc',
-                },
-                grid: {
-                    vertLines: { color: 'rgba(42, 46, 57, 0.5)' },
-                    horzLines: { color: 'rgba(42, 46, 57, 0.5)' },
-                },
-                crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
-                rightPriceScale: {
-                    borderColor: 'rgba(197, 203, 206, 0.8)',
-                    autoScale: true,
-                },
-                timeScale: {
-                    borderColor: 'rgba(197, 203, 206, 0.8)',
-                    timeVisible: true,
-                    secondsVisible: false,
-                },
-            });
-
-            candleSeries = chart.addCandlestickSeries({
-                upColor: '#26a69a',
-                downColor: '#ef5350',
-                borderVisible: false,
-                wickUpColor: '#26a69a',
-                wickDownColor: '#ef5350',
-            });
-
-            log("Chart Library Loaded Successfully.");
-        } catch (e) {
-            log("CRITICAL ERROR: Could not load chart library. Check internet.");
+        // Resize Handler
+        function resize() {
+            width = wrapper.clientWidth;
+            height = wrapper.clientHeight;
+            // Handle High DPI screens for crisp text
+            const dpr = window.devicePixelRatio || 1;
+            canvas.width = width * dpr;
+            canvas.height = height * dpr;
+            ctx.scale(dpr, dpr);
+            draw();
         }
+        window.addEventListener('resize', resize);
+        
+        // Main Draw Function
+        function draw() {
+            // Clear
+            ctx.clearRect(0, 0, width, height);
+            ctx.fillStyle = "#121212";
+            ctx.fillRect(0, 0, width, height);
 
-        // Handle Window Resize
-        new ResizeObserver(entries => {
-            if (entries.length === 0 || entries[0].target !== chartContainer) return;
-            const newRect = entries[0].contentRect;
-            chart.applyOptions({ height: newRect.height, width: newRect.width });
-        }).observe(chartContainer);
+            if (candles.length === 0) {
+                ctx.fillStyle = "#555";
+                ctx.font = "14px monospace";
+                ctx.fillText("Waiting for data...", width/2 - 50, height/2);
+                return;
+            }
 
+            // 1. Determine Visible Data (Slice the end of the array)
+            const startIndex = Math.max(0, candles.length - visibleCandles);
+            const viewData = candles.slice(startIndex);
 
-        // --- DATA HANDLING ---
-        const elPrice = document.getElementById('current-price');
-        const elStatus = document.getElementById('connection-status');
-        const elLabel = document.getElementById('data-source-label');
-        let lastClose = 0;
+            // 2. Calculate Min/Max Price (Y-Axis Scaling)
+            let minP = Infinity, maxP = -Infinity;
+            viewData.forEach(c => {
+                if(c.low < minP) minP = c.low;
+                if(c.high > maxP) maxP = c.high;
+            });
+            // Add padding
+            const padding = (maxP - minP) * 0.1; 
+            minP -= padding; maxP += padding;
+            if(minP === maxP) { minP -= 1; maxP += 1; } // Prevent divide by zero
 
-        function updateUI(price, isLive) {
-            const color = price > lastClose ? '#26a69a' : (price < lastClose ? '#ef5350' : '#fff');
-            elPrice.style.color = color;
-            elPrice.innerText = `$${price.toFixed(2)}`;
-            document.title = `$${price.toFixed(2)} Gold`;
-            lastClose = price;
-        }
+            // 3. Dimensions
+            const candleWidth = width / viewData.length;
+            const gap = candleWidth * 0.2;
+            const bodyWidth = candleWidth - gap;
 
-        // --- STRATEGY 1: REAL DATA (CryptoCompare + Binance) ---
-        async function startRealData() {
-            log("Attempting to fetch real historical data (CryptoCompare)...");
+            // Helper: Price to Y pixel
+            const getY = (price) => height - ((price - minP) / (maxP - minP) * height);
+
+            // 4. Draw Grid
+            ctx.strokeStyle = "#222";
+            ctx.lineWidth = 1;
+            // Horizontal grid lines
+            for(let i=0; i<5; i++) {
+                let p = minP + (maxP-minP)*(i/4);
+                let y = getY(p);
+                ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(width, y); ctx.stroke();
+                
+                // Draw price label
+                ctx.fillStyle = "#555";
+                ctx.font = "10px sans-serif";
+                ctx.fillText(p.toFixed(2), width - 50, y - 5);
+            }
+
+            // 5. Draw Candles
+            viewData.forEach((c, i) => {
+                const x = i * candleWidth + (gap/2);
+                const openY = getY(c.open);
+                const closeY = getY(c.close);
+                const highY = getY(c.high);
+                const lowY = getY(c.low);
+                
+                const isGreen = c.close >= c.open;
+                ctx.fillStyle = isGreen ? "#26a69a" : "#ef5350";
+                ctx.strokeStyle = ctx.fillStyle;
+
+                // Draw Wick
+                ctx.beginPath();
+                ctx.moveTo(x + bodyWidth/2, highY);
+                ctx.lineTo(x + bodyWidth/2, lowY);
+                ctx.stroke();
+
+                // Draw Body
+                let bodyHeight = Math.abs(closeY - openY);
+                if(bodyHeight < 1) bodyHeight = 1; // Ensure thin candles are visible
+                
+                ctx.fillRect(
+                    x, 
+                    Math.min(openY, closeY), 
+                    bodyWidth, 
+                    bodyHeight
+                );
+            });
             
+            // Draw current price line
+            const lastClose = viewData[viewData.length-1].close;
+            const lastY = getY(lastClose);
+            ctx.strokeStyle = "#fff";
+            ctx.setLineDash([5, 5]);
+            ctx.beginPath(); ctx.moveTo(0, lastY); ctx.lineTo(width, lastY); ctx.stroke();
+            ctx.setLineDash([]);
+        }
+
+        // --- 3. DATA & APP LOGIC ---
+        const uiPrice = document.getElementById('price-display');
+        const uiStatus = document.getElementById('status-display');
+        const uiSource = document.getElementById('source-label');
+        let currentPrice = 0;
+
+        function updateUI(price) {
+            const color = price > currentPrice ? '#26a69a' : (price < currentPrice ? '#ef5350' : '#fff');
+            uiPrice.style.color = color;
+            uiPrice.innerText = `$${price.toFixed(2)}`;
+            document.title = `$${price.toFixed(2)} Gold`;
+            currentPrice = price;
+            resize(); // Redraw chart
+        }
+
+        function addCandle(newCandle) {
+            // If new candle is same minute as last one, update last one. Otherwise push.
+            if(candles.length > 0) {
+                const last = candles[candles.length - 1];
+                // Simple check: if time diff < 60s, update.
+                // Note: API timestamps are usually start of minute.
+                if(newCandle.time === last.time) {
+                    candles[candles.length - 1] = newCandle;
+                } else if (newCandle.time > last.time) {
+                    candles.push(newCandle);
+                }
+            } else {
+                candles.push(newCandle);
+            }
+            // Keep memory check (max 200 candles)
+            if(candles.length > 200) candles.shift();
+            updateUI(newCandle.close);
+        }
+
+        // --- 4. DATA SOURCES ---
+
+        async function start() {
+            resize(); // Init canvas size
+            
+            // Try Real Data
+            log("Fetching real data...");
             try {
                 // Fetch History
-                const res = await fetch('https://min-api.cryptocompare.com/data/v2/histominute?fsym=PAXG&tsym=USD&limit=200');
-                if (!res.ok) throw new Error("Network response was not ok");
-                
+                const res = await fetch('https://min-api.cryptocompare.com/data/v2/histominute?fsym=PAXG&tsym=USD&limit=100');
+                if(!res.ok) throw new Error("Fetch failed");
                 const json = await res.json();
-                if (json.Response !== 'Success') throw new Error(json.Message);
+                if(json.Response !== 'Success') throw new Error(json.Message);
 
-                const data = json.Data.Data.map(d => ({
+                // Populate History
+                candles = json.Data.Data.map(d => ({
                     time: d.time,
-                    open: d.open,
-                    high: d.high,
-                    low: d.low,
-                    close: d.close
+                    open: d.open, high: d.high, low: d.low, close: d.close
                 }));
+                log("History loaded. Connecting WS...");
+                uiSource.innerText = "Source: Market Data (PAXG)";
 
-                candleSeries.setData(data);
-                lastClose = data[data.length - 1].close;
-                updateUI(lastClose, true);
-                
-                log("History loaded. Connecting to Binance WebSocket...");
-                elLabel.innerText = "Source: Real-Time Market Data";
-                
                 // Connect WebSocket
                 const ws = new WebSocket('wss://stream.binance.com:9443/ws/paxgusdt@kline_1m');
                 
                 ws.onopen = () => {
-                    log("WebSocket Connected.");
-                    elStatus.innerText = "● LIVE DATA";
-                    elStatus.className = "status-live";
+                    log("WebSocket Open.");
+                    uiStatus.innerText = "● LIVE";
+                    uiStatus.className = "status-text st-live";
                 };
 
-                ws.onmessage = (event) => {
-                    const msg = JSON.parse(event.data);
+                ws.onmessage = (e) => {
+                    const msg = JSON.parse(e.data);
                     const k = msg.k;
-                    const candle = {
+                    const c = {
                         time: k.t / 1000,
                         open: parseFloat(k.o),
                         high: parseFloat(k.h),
                         low: parseFloat(k.l),
-                        close: parseFloat(k.c),
+                        close: parseFloat(k.c)
                     };
-                    candleSeries.update(candle);
-                    updateUI(candle.close, true);
+                    addCandle(c);
                 };
 
-                ws.onerror = (err) => {
-                    log("WebSocket Error. Switching to Simulation.");
-                    ws.close();
-                    startSimulationMode(lastClose); // Fallback if socket fails
+                ws.onerror = (e) => {
+                    throw new Error("WebSocket error");
                 };
 
-            } catch (err) {
-                log(`Real Data Failed: ${err.message}`);
-                log("Switching to SIMULATION MODE...");
-                // If anything failed, start simulation
-                startSimulationMode(2000); // Start sim at $2000
+            } catch (e) {
+                log("Real data failed: " + e.message);
+                startSimulation();
             }
         }
 
-        // --- STRATEGY 2: SIMULATION MODE (Fallback) ---
-        // This runs if real API is blocked so the user still sees a chart
-        function startSimulationMode(startPrice) {
-            elStatus.innerText = "● SIMULATION MODE (Offline)";
-            elStatus.className = "status-sim";
-            elLabel.innerText = "Source: Generated Data (Demo)";
-            log("Generating mock data...");
+        // --- 5. SIMULATION MODE (Fallback) ---
+        function startSimulation() {
+            log("Starting Simulation Mode...");
+            uiSource.innerText = "Source: Simulator (Demo)";
+            uiStatus.innerText = "● SIMULATION";
+            uiStatus.className = "status-text st-sim";
 
-            // 1. Generate History
-            let currentPrice = startPrice;
-            const data = [];
-            let time = Math.floor(Date.now() / 1000) - (100 * 60); // 100 mins ago
-
-            for (let i = 0; i < 100; i++) {
-                const move = (Math.random() - 0.5) * 2;
-                const open = currentPrice;
-                const close = open + move;
-                const high = Math.max(open, close) + Math.random();
-                const low = Math.min(open, close) - Math.random();
-                
-                data.push({ time, open, high, low, close });
-                currentPrice = close;
+            // Generate fake history
+            let price = 2600.00;
+            let time = Math.floor(Date.now()/1000) - 3600;
+            
+            for(let i=0; i<60; i++) {
+                let o = price;
+                let c = o + (Math.random()-0.5)*2;
+                let h = Math.max(o,c) + Math.random();
+                let l = Math.min(o,c) - Math.random();
+                candles.push({ time, open:o, high:h, low:l, close:c });
+                price = c;
                 time += 60;
             }
-            
-            candleSeries.setData(data);
-            updateUI(currentPrice, false);
+            updateUI(price);
 
-            // 2. Simulate Live Ticks
-            log("Starting simulated live ticks...");
-            
-            // Keep track of current candle
-            let lastCandleTime = time;
-            let currentCandle = {
-                time: lastCandleTime,
-                open: currentPrice,
-                high: currentPrice,
-                low: currentPrice,
-                close: currentPrice
-            };
-
+            // Fake live tick loop
             setInterval(() => {
-                const now = Math.floor(Date.now() / 1000);
+                let last = candles[candles.length-1];
+                let now = Math.floor(Date.now()/1000);
                 
-                // New Minute?
-                if (now - lastCandleTime >= 60) {
-                    lastCandleTime = now;
-                    currentCandle = {
-                        time: lastCandleTime,
-                        open: currentCandle.close,
-                        high: currentCandle.close,
-                        low: currentCandle.close,
-                        close: currentCandle.close
-                    };
+                // New minute?
+                if(now - last.time >= 60) {
+                    let newC = { time: now, open: last.close, high: last.close, low: last.close, close: last.close };
+                    candles.push(newC);
+                    last = newC;
+                    if(candles.length > 200) candles.shift();
                 }
 
-                const move = (Math.random() - 0.5) * 0.5; // Random small move
-                currentCandle.close += move;
-                currentCandle.high = Math.max(currentCandle.high, currentCandle.close);
-                currentCandle.low = Math.min(currentCandle.low, currentCandle.close);
-
-                candleSeries.update(currentCandle);
-                updateUI(currentCandle.close, false);
-            }, 1000); // Update every second
+                // Move price
+                let move = (Math.random()-0.5) * 0.5;
+                last.close += move;
+                if(last.close > last.high) last.high = last.close;
+                if(last.close < last.low) last.low = last.close;
+                
+                updateUI(last.close);
+            }, 1000);
         }
 
-        // --- INIT ---
-        startRealData();
+        // Start
+        start();
 
     </script>
 </body>
