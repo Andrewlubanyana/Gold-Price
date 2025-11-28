@@ -3,220 +3,306 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Real-Time Gold Price (XAU/USD)</title>
-    <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
+    <title>Live Gold Chart (Resilient)</title>
+    <!-- Using Cloudflare CDN for better reliability -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/lightweight-charts/4.1.1/lightweight-charts.standalone.production.min.js"></script>
     <style>
         body {
-            margin: 0;
-            padding: 0;
             background-color: #121212;
-            color: #d1d4dc;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
+            color: #e0e0e0;
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            margin: 0;
             display: flex;
             flex-direction: column;
             height: 100vh;
+            overflow: hidden;
         }
 
         header {
-            padding: 20px;
             background-color: #1e1e1e;
+            padding: 15px 20px;
             display: flex;
             justify-content: space-between;
             align-items: center;
-            border-bottom: 1px solid #2a2a2a;
+            border-bottom: 1px solid #333;
         }
 
-        h1 {
+        .title-group h1 {
             margin: 0;
-            font-size: 24px;
+            font-size: 1.5rem;
             color: #d4af37; /* Gold */
+            letter-spacing: 1px;
         }
 
-        .price-container {
+        .title-group span {
+            font-size: 0.8rem;
+            color: #888;
+        }
+
+        .price-group {
             text-align: right;
         }
 
-        #price-display {
-            font-size: 28px;
+        #current-price {
+            font-size: 1.8rem;
             font-weight: bold;
-            color: #ffffff;
+            color: #fff;
         }
 
-        #status-display {
-            font-size: 12px;
-            color: #888;
-            margin-top: 5px;
+        #connection-status {
+            font-size: 0.8rem;
+            font-weight: 500;
         }
 
-        #chart-container {
+        .status-live { color: #00e676; } /* Green */
+        .status-sim { color: #ff9100; }  /* Orange */
+        .status-err { color: #ff1744; }  /* Red */
+
+        #chart-wrapper {
             flex-grow: 1;
-            width: 100%;
             position: relative;
+            width: 100%;
         }
 
-        .disclaimer {
+        /* Debug Console at the bottom */
+        #debug-console {
+            height: 100px;
+            background: #000;
+            color: #00ff00;
+            font-family: monospace;
             font-size: 11px;
-            color: #555;
-            padding: 5px;
-            text-align: center;
-            background-color: #1e1e1e;
+            padding: 10px;
+            overflow-y: auto;
+            border-top: 1px solid #333;
         }
     </style>
 </head>
 <body>
 
     <header>
-        <div>
+        <div class="title-group">
             <h1>GOLD / USD</h1>
-            <div style="font-size: 12px; color: #888;">PAX Gold (Real-time Proxy)</div>
+            <span id="data-source-label">Initializing...</span>
         </div>
-        <div class="price-container">
-            <div id="price-display">Loading...</div>
-            <div id="status-display">Initializing connection...</div>
+        <div class="price-group">
+            <div id="current-price">---.--</div>
+            <div id="connection-status">Connecting...</div>
         </div>
     </header>
 
-    <div id="chart-container"></div>
-    
-    <div class="disclaimer">
-        Powered by Lightweight Charts™. Data Source: CryptoCompare (History) & Binance (Live).
+    <div id="chart-wrapper"></div>
+
+    <div id="debug-console">
+        <div>> System initialized.</div>
+        <div>> Loading Chart Library...</div>
     </div>
 
     <script>
-        // --- CONFIGURATION ---
-        // We use PAXG (Pax Gold) as a proxy because real Forex APIs are not free.
-        const SYMBOL_HISTORY = 'PAXG'; 
-        const SYMBOL_LIVE = 'paxgusdt'; 
-        
-        // --- CHART SETUP ---
-        const container = document.getElementById('chart-container');
-        const chart = LightweightCharts.createChart(container, {
-            layout: {
-                textColor: '#d1d4dc',
-                background: { type: 'solid', color: '#121212' },
-            },
-            grid: {
-                vertLines: { color: '#2B2B43' },
-                horzLines: { color: '#2B2B43' },
-            },
-            crosshair: {
-                mode: LightweightCharts.CrosshairMode.Normal,
-            },
-            rightPriceScale: {
-                borderColor: '#2B2B43',
-                scaleMargins: { top: 0.1, bottom: 0.1 },
-            },
-            timeScale: {
-                borderColor: '#2B2B43',
-                timeVisible: true,
-                secondsVisible: false,
-            },
-        });
+        // --- UTILITIES ---
+        const logDiv = document.getElementById('debug-console');
+        function log(msg) {
+            const div = document.createElement('div');
+            div.textContent = `> ${msg}`;
+            logDiv.appendChild(div);
+            logDiv.scrollTop = logDiv.scrollHeight;
+            console.log(msg);
+        }
 
-        // Responsive Resizing
+        // --- CHART SETUP ---
+        const chartContainer = document.getElementById('chart-wrapper');
+        
+        let chart;
+        let candleSeries;
+
+        try {
+            chart = LightweightCharts.createChart(chartContainer, {
+                layout: {
+                    background: { type: 'solid', color: '#121212' },
+                    textColor: '#d1d4dc',
+                },
+                grid: {
+                    vertLines: { color: 'rgba(42, 46, 57, 0.5)' },
+                    horzLines: { color: 'rgba(42, 46, 57, 0.5)' },
+                },
+                crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+                rightPriceScale: {
+                    borderColor: 'rgba(197, 203, 206, 0.8)',
+                    autoScale: true,
+                },
+                timeScale: {
+                    borderColor: 'rgba(197, 203, 206, 0.8)',
+                    timeVisible: true,
+                    secondsVisible: false,
+                },
+            });
+
+            candleSeries = chart.addCandlestickSeries({
+                upColor: '#26a69a',
+                downColor: '#ef5350',
+                borderVisible: false,
+                wickUpColor: '#26a69a',
+                wickDownColor: '#ef5350',
+            });
+
+            log("Chart Library Loaded Successfully.");
+        } catch (e) {
+            log("CRITICAL ERROR: Could not load chart library. Check internet.");
+        }
+
+        // Handle Window Resize
         new ResizeObserver(entries => {
-            if (entries.length === 0 || entries[0].target !== container) { return; }
+            if (entries.length === 0 || entries[0].target !== chartContainer) return;
             const newRect = entries[0].contentRect;
             chart.applyOptions({ height: newRect.height, width: newRect.width });
-        }).observe(container);
+        }).observe(chartContainer);
 
-        const candleSeries = chart.addCandlestickSeries({
-            upColor: '#26a69a',
-            downColor: '#ef5350',
-            borderVisible: false,
-            wickUpColor: '#26a69a',
-            wickDownColor: '#ef5350',
-        });
 
-        const statusDisplay = document.getElementById('status-display');
-        const priceDisplay = document.getElementById('price-display');
-        let currentPrice = 0;
+        // --- DATA HANDLING ---
+        const elPrice = document.getElementById('current-price');
+        const elStatus = document.getElementById('connection-status');
+        const elLabel = document.getElementById('data-source-label');
+        let lastClose = 0;
 
-        // --- DATA FETCHING ---
+        function updateUI(price, isLive) {
+            const color = price > lastClose ? '#26a69a' : (price < lastClose ? '#ef5350' : '#fff');
+            elPrice.style.color = color;
+            elPrice.innerText = `$${price.toFixed(2)}`;
+            document.title = `$${price.toFixed(2)} Gold`;
+            lastClose = price;
+        }
 
-        // 1. Fetch History from CryptoCompare (More reliable for browsers than Binance REST API)
-        async function loadHistory() {
-            statusDisplay.innerText = "Fetching historical data...";
+        // --- STRATEGY 1: REAL DATA (CryptoCompare + Binance) ---
+        async function startRealData() {
+            log("Attempting to fetch real historical data (CryptoCompare)...");
+            
             try {
-                // Fetching last 1000 minutes of data for PAXG/USD
-                const response = await fetch(`https://min-api.cryptocompare.com/data/v2/histominute?fsym=${SYMBOL_HISTORY}&tsym=USD&limit=2000`);
-                const json = await response.json();
+                // Fetch History
+                const res = await fetch('https://min-api.cryptocompare.com/data/v2/histominute?fsym=PAXG&tsym=USD&limit=200');
+                if (!res.ok) throw new Error("Network response was not ok");
+                
+                const json = await res.json();
+                if (json.Response !== 'Success') throw new Error(json.Message);
 
-                if (json.Response === 'Success') {
-                    const data = json.Data.Data.map(d => ({
-                        time: d.time,
-                        open: d.open,
-                        high: d.high,
-                        low: d.low,
-                        close: d.close
-                    }));
+                const data = json.Data.Data.map(d => ({
+                    time: d.time,
+                    open: d.open,
+                    high: d.high,
+                    low: d.low,
+                    close: d.close
+                }));
 
-                    candleSeries.setData(data);
-                    
-                    // Update initial price
-                    const lastCandle = data[data.length - 1];
-                    updatePrice(lastCandle.close);
-                    statusDisplay.innerText = "Connecting to Live Stream...";
-                    startWebSocket();
-                } else {
-                    throw new Error(json.Message || "API Error");
-                }
+                candleSeries.setData(data);
+                lastClose = data[data.length - 1].close;
+                updateUI(lastClose, true);
+                
+                log("History loaded. Connecting to Binance WebSocket...");
+                elLabel.innerText = "Source: Real-Time Market Data";
+                
+                // Connect WebSocket
+                const ws = new WebSocket('wss://stream.binance.com:9443/ws/paxgusdt@kline_1m');
+                
+                ws.onopen = () => {
+                    log("WebSocket Connected.");
+                    elStatus.innerText = "● LIVE DATA";
+                    elStatus.className = "status-live";
+                };
+
+                ws.onmessage = (event) => {
+                    const msg = JSON.parse(event.data);
+                    const k = msg.k;
+                    const candle = {
+                        time: k.t / 1000,
+                        open: parseFloat(k.o),
+                        high: parseFloat(k.h),
+                        low: parseFloat(k.l),
+                        close: parseFloat(k.c),
+                    };
+                    candleSeries.update(candle);
+                    updateUI(candle.close, true);
+                };
+
+                ws.onerror = (err) => {
+                    log("WebSocket Error. Switching to Simulation.");
+                    ws.close();
+                    startSimulationMode(lastClose); // Fallback if socket fails
+                };
+
             } catch (err) {
-                console.error("History Fetch Error:", err);
-                statusDisplay.innerText = "History failed. Attempting live only...";
-                statusDisplay.style.color = "orange";
-                // Even if history fails, try to start the live stream
-                startWebSocket(); 
+                log(`Real Data Failed: ${err.message}`);
+                log("Switching to SIMULATION MODE...");
+                // If anything failed, start simulation
+                startSimulationMode(2000); // Start sim at $2000
             }
         }
 
-        // 2. Real-time Updates via Binance WebSocket
-        function startWebSocket() {
-            // Using Binance WebSocket because it usually bypasses CORS issues
-            const ws = new WebSocket(`wss://stream.binance.com:9443/ws/${SYMBOL_LIVE}@kline_1m`);
+        // --- STRATEGY 2: SIMULATION MODE (Fallback) ---
+        // This runs if real API is blocked so the user still sees a chart
+        function startSimulationMode(startPrice) {
+            elStatus.innerText = "● SIMULATION MODE (Offline)";
+            elStatus.className = "status-sim";
+            elLabel.innerText = "Source: Generated Data (Demo)";
+            log("Generating mock data...");
 
-            ws.onopen = () => {
-                statusDisplay.innerText = "● Live Market Data";
-                statusDisplay.style.color = "#4caf50";
-            };
+            // 1. Generate History
+            let currentPrice = startPrice;
+            const data = [];
+            let time = Math.floor(Date.now() / 1000) - (100 * 60); // 100 mins ago
 
-            ws.onmessage = (event) => {
-                const message = JSON.parse(event.data);
-                const k = message.k;
-
-                const candle = {
-                    time: k.t / 1000,
-                    open: parseFloat(k.o),
-                    high: parseFloat(k.h),
-                    low: parseFloat(k.l),
-                    close: parseFloat(k.c),
-                };
-
-                candleSeries.update(candle);
-                updatePrice(candle.close);
-            };
-
-            ws.onerror = (err) => {
-                console.error("WebSocket Error:", err);
-                statusDisplay.innerText = "Stream Error (Check Console)";
-                statusDisplay.style.color = "red";
-            };
-        }
-
-        function updatePrice(price) {
-            // Color animation based on price movement
-            const color = price > currentPrice ? '#26a69a' : (price < currentPrice ? '#ef5350' : '#ffffff');
-            priceDisplay.style.color = color;
-            priceDisplay.innerText = `$${price.toFixed(2)}`;
-            document.title = `$${price.toFixed(2)} | Gold`;
-            currentPrice = price;
+            for (let i = 0; i < 100; i++) {
+                const move = (Math.random() - 0.5) * 2;
+                const open = currentPrice;
+                const close = open + move;
+                const high = Math.max(open, close) + Math.random();
+                const low = Math.min(open, close) - Math.random();
+                
+                data.push({ time, open, high, low, close });
+                currentPrice = close;
+                time += 60;
+            }
             
-            // Reset color after a brief moment
-            setTimeout(() => { priceDisplay.style.color = '#ffffff'; }, 500);
+            candleSeries.setData(data);
+            updateUI(currentPrice, false);
+
+            // 2. Simulate Live Ticks
+            log("Starting simulated live ticks...");
+            
+            // Keep track of current candle
+            let lastCandleTime = time;
+            let currentCandle = {
+                time: lastCandleTime,
+                open: currentPrice,
+                high: currentPrice,
+                low: currentPrice,
+                close: currentPrice
+            };
+
+            setInterval(() => {
+                const now = Math.floor(Date.now() / 1000);
+                
+                // New Minute?
+                if (now - lastCandleTime >= 60) {
+                    lastCandleTime = now;
+                    currentCandle = {
+                        time: lastCandleTime,
+                        open: currentCandle.close,
+                        high: currentCandle.close,
+                        low: currentCandle.close,
+                        close: currentCandle.close
+                    };
+                }
+
+                const move = (Math.random() - 0.5) * 0.5; // Random small move
+                currentCandle.close += move;
+                currentCandle.high = Math.max(currentCandle.high, currentCandle.close);
+                currentCandle.low = Math.min(currentCandle.low, currentCandle.close);
+
+                candleSeries.update(currentCandle);
+                updateUI(currentCandle.close, false);
+            }, 1000); // Update every second
         }
 
-        // Start the app
-        loadHistory();
+        // --- INIT ---
+        startRealData();
 
     </script>
 </body>
