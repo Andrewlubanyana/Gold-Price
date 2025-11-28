@@ -3,360 +3,522 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gold Chart (Zero-Dependency)</title>
+    <title>Interactive Gold Chart (Native HTML5)</title>
     <style>
+        /* --- LAYOUT & DARK MODE --- */
         body {
-            background-color: #121212;
-            color: #e0e0e0;
-            font-family: 'Segoe UI', Roboto, monospace;
+            background-color: #0d0d0d;
+            color: #c9c9c9;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             margin: 0;
             display: flex;
             flex-direction: column;
             height: 100vh;
-            overflow: hidden;
+            overflow: hidden; /* Prevent body scroll, handle in canvas */
+            user-select: none; /* easier dragging */
         }
 
+        /* --- HEADER --- */
         header {
-            background-color: #1e1e1e;
-            padding: 15px 20px;
+            background-color: #161616;
+            padding: 10px 15px;
             display: flex;
             justify-content: space-between;
             align-items: center;
-            border-bottom: 1px solid #333;
-            flex-shrink: 0;
+            border-bottom: 1px solid #2a2a2a;
         }
 
-        h1 { margin: 0; font-size: 1.5rem; color: #d4af37; letter-spacing: 1px; }
-        .sub-text { font-size: 0.8rem; color: #888; }
-        .price-big { font-size: 1.8rem; font-weight: bold; color: #fff; text-align: right;}
-        .status-text { font-size: 0.75rem; text-align: right; }
-        .st-live { color: #00e676; }
-        .st-sim { color: #ff9100; }
+        .left-panel { display: flex; align-items: center; gap: 20px; }
+        
+        h1 {
+            margin: 0;
+            font-size: 18px;
+            color: #d4af37; /* Gold */
+            font-weight: 700;
+        }
 
-        /* The Chart Container */
+        /* Timeframe Buttons */
+        .tf-group {
+            display: flex;
+            background: #222;
+            border-radius: 4px;
+            padding: 2px;
+        }
+        .tf-btn {
+            background: transparent;
+            border: none;
+            color: #777;
+            padding: 4px 10px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            border-radius: 2px;
+            transition: all 0.2s;
+        }
+        .tf-btn:hover { color: #fff; background: #333; }
+        .tf-btn.active { color: #000; background: #d4af37; }
+
+        .price-panel { text-align: right; }
+        #price-main { font-size: 20px; font-weight: bold; color: #fff; }
+        #status-msg { font-size: 10px; color: #555; }
+
+        /* --- CHART AREA --- */
         #chart-wrapper {
             flex-grow: 1;
             position: relative;
-            background-color: #121212;
-            width: 100%;
-            overflow: hidden;
             cursor: crosshair;
+            overflow: hidden;
         }
+        
+        canvas { display: block; width: 100%; height: 100%; }
 
-        canvas {
-            display: block;
-            width: 100%;
-            height: 100%;
-        }
-
-        #tooltip {
+        /* Floating Tooltips */
+        #crosshair-label-price {
             position: absolute;
-            top: 10px;
-            left: 10px;
-            background: rgba(0,0,0,0.7);
-            color: #ddd;
-            padding: 5px;
-            pointer-events: none;
-            font-size: 12px;
+            right: 0;
+            background: #d4af37;
+            color: #000;
+            padding: 2px 4px;
+            font-size: 11px;
+            font-weight: bold;
             display: none;
-            border: 1px solid #444;
+            pointer-events: none;
+            z-index: 10;
+        }
+        #crosshair-label-time {
+            position: absolute;
+            bottom: 0;
+            background: #333;
+            color: #fff;
+            padding: 2px 4px;
+            font-size: 11px;
+            display: none;
+            pointer-events: none;
+            z-index: 10;
         }
 
-        #debug {
-            height: 100px;
-            background: #000;
-            color: #0f0;
-            font-size: 10px;
-            padding: 5px;
-            overflow-y: auto;
-            border-top: 1px solid #333;
-            flex-shrink: 0;
+        /* Reset Button */
+        #reset-view {
+            position: absolute;
+            bottom: 20px;
+            right: 60px;
+            background: #222;
+            color: #888;
+            border: 1px solid #444;
+            padding: 5px 10px;
+            font-size: 11px;
+            cursor: pointer;
+            display: none; /* Shown when scrolled back */
+            z-index: 5;
         }
+        #reset-view:hover { color: #fff; border-color: #fff; }
+
     </style>
 </head>
 <body>
 
     <header>
-        <div>
-            <h1>GOLD / USD</h1>
-            <div class="sub-text" id="source-label">System Initializing...</div>
+        <div class="left-panel">
+            <h1>GOLD/USD</h1>
+            <div class="tf-group">
+                <button class="tf-btn active" onclick="setTF('1m', 1)">1m</button>
+                <button class="tf-btn" onclick="setTF('5m', 5)">5m</button>
+                <button class="tf-btn" onclick="setTF('15m', 15)">15m</button>
+                <button class="tf-btn" onclick="setTF('1h', 60)">1H</button>
+                <button class="tf-btn" onclick="setTF('4h', 240)">4H</button>
+                <button class="tf-btn" onclick="setTF('1d', 1440)">1D</button>
+            </div>
         </div>
-        <div>
-            <div class="price-big" id="price-display">---.--</div>
-            <div class="status-text" id="status-display">Waiting...</div>
+        <div class="price-panel">
+            <div id="price-main">---.--</div>
+            <div id="status-msg">Initializing...</div>
         </div>
     </header>
 
     <div id="chart-wrapper">
-        <canvas id="mainCanvas"></canvas>
-        <div id="tooltip"></div>
+        <canvas id="cvs"></canvas>
+        <div id="crosshair-label-price"></div>
+        <div id="crosshair-label-time"></div>
+        <button id="reset-view" onclick="resetToLive()">Return to Live >></button>
     </div>
 
-    <div id="debug"></div>
-
     <script>
-        // --- 1. SYSTEM LOGGING ---
-        const debugBox = document.getElementById('debug');
-        function log(msg) {
-            const d = document.createElement('div');
-            d.textContent = `> ${msg}`;
-            debugBox.appendChild(d);
-            debugBox.scrollTop = debugBox.scrollHeight;
-            console.log(msg);
-        }
-        log("System started. Using internal Canvas renderer (No libraries).");
+        // --- CONFIGURATION ---
+        const CONFIG = {
+            upColor: '#00e676',   // Bright Green
+            downColor: '#ff1744', // Bright Red
+            bgColor: '#0d0d0d',
+            gridColor: '#1f1f1f',
+            textColor: '#555',
+            font: '11px Arial'
+        };
 
-        // --- 2. CUSTOM CHART ENGINE (Native HTML5) ---
-        const canvas = document.getElementById('mainCanvas');
-        const ctx = canvas.getContext('2d');
-        const wrapper = document.getElementById('chart-wrapper');
-        const tooltip = document.getElementById('tooltip');
-        
-        // Chart State
-        let candles = []; // Array of {time, open, high, low, close}
-        let visibleCandles = 60; // How many candles to show at once
-        let width = 0;
-        let height = 0;
+        // --- STATE MANAGEMENT ---
+        const state = {
+            data: [],           // Candle Data
+            timeframe: '1m',
+            apiAgg: 1,          // API aggregation parameter
+            
+            // Viewport
+            scrollOffset: 0,    // 0 = Showing latest candle. >0 = scrolled back
+            zoom: 12,           // Pixels per candle (Width)
+            
+            // Interaction
+            dragging: false,
+            lastX: 0,
+            mouseX: -1,
+            mouseY: -1,
+            
+            // Dimensions
+            width: 0,
+            height: 0,
+            
+            // Boundaries
+            visibleCandles: 0
+        };
 
-        // Resize Handler
+        // --- DOM ELEMENTS ---
+        const canvas = document.getElementById('cvs');
+        const ctx = canvas.getContext('2d', { alpha: false });
+        const container = document.getElementById('chart-wrapper');
+        const elPrice = document.getElementById('price-main');
+        const elStatus = document.getElementById('status-msg');
+        const lblPrice = document.getElementById('crosshair-label-price');
+        const lblTime = document.getElementById('crosshair-label-time');
+        const btnReset = document.getElementById('reset-view');
+
+        // --- 1. CORE RENDERING ENGINE ---
         function resize() {
-            width = wrapper.clientWidth;
-            height = wrapper.clientHeight;
-            // Handle High DPI screens for crisp text
+            state.width = container.clientWidth;
+            state.height = container.clientHeight;
             const dpr = window.devicePixelRatio || 1;
-            canvas.width = width * dpr;
-            canvas.height = height * dpr;
+            canvas.width = state.width * dpr;
+            canvas.height = state.height * dpr;
             ctx.scale(dpr, dpr);
             draw();
         }
         window.addEventListener('resize', resize);
-        
-        // Main Draw Function
-        function draw() {
-            // Clear
-            ctx.clearRect(0, 0, width, height);
-            ctx.fillStyle = "#121212";
-            ctx.fillRect(0, 0, width, height);
 
-            if (candles.length === 0) {
-                ctx.fillStyle = "#555";
-                ctx.font = "14px monospace";
-                ctx.fillText("Waiting for data...", width/2 - 50, height/2);
+        function draw() {
+            // A. Clear Screen
+            ctx.fillStyle = CONFIG.bgColor;
+            ctx.fillRect(0, 0, state.width, state.height);
+
+            if (state.data.length === 0) {
+                ctx.fillStyle = CONFIG.textColor;
+                ctx.fillText("Loading Data...", state.width/2 - 30, state.height/2);
                 return;
             }
 
-            // 1. Determine Visible Data (Slice the end of the array)
-            const startIndex = Math.max(0, candles.length - visibleCandles);
-            const viewData = candles.slice(startIndex);
+            // B. Calculate Visible Data Range
+            const w = state.width;
+            const h = state.height;
+            const candleFullWidth = state.zoom; 
+            const gap = Math.max(1, state.zoom * 0.2);
+            const bodyWidth = Math.max(1, candleFullWidth - gap);
 
-            // 2. Calculate Min/Max Price (Y-Axis Scaling)
-            let minP = Infinity, maxP = -Infinity;
-            viewData.forEach(c => {
-                if(c.low < minP) minP = c.low;
-                if(c.high > maxP) maxP = c.high;
-            });
-            // Add padding
-            const padding = (maxP - minP) * 0.1; 
-            minP -= padding; maxP += padding;
-            if(minP === maxP) { minP -= 1; maxP += 1; } // Prevent divide by zero
+            // How many candles fit on screen?
+            state.visibleCandles = Math.ceil(w / candleFullWidth) + 1;
 
-            // 3. Dimensions
-            const candleWidth = width / viewData.length;
-            const gap = candleWidth * 0.2;
-            const bodyWidth = candleWidth - gap;
+            // Define Array Slices based on Scroll Offset
+            // We read from the end of the array backwards
+            let endIndex = state.data.length - 1 - Math.floor(state.scrollOffset);
+            let startIndex = endIndex - state.visibleCandles;
+            
+            // Boundary Checks
+            if (endIndex >= state.data.length) endIndex = state.data.length - 1;
+            if (startIndex < 0) startIndex = 0;
 
-            // Helper: Price to Y pixel
-            const getY = (price) => height - ((price - minP) / (maxP - minP) * height);
+            const renderData = [];
+            for(let i = startIndex; i <= endIndex; i++) renderData.push(state.data[i]);
 
-            // 4. Draw Grid
-            ctx.strokeStyle = "#222";
-            ctx.lineWidth = 1;
-            // Horizontal grid lines
-            for(let i=0; i<5; i++) {
-                let p = minP + (maxP-minP)*(i/4);
-                let y = getY(p);
-                ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(width, y); ctx.stroke();
-                
-                // Draw price label
-                ctx.fillStyle = "#555";
-                ctx.font = "10px sans-serif";
-                ctx.fillText(p.toFixed(2), width - 50, y - 5);
+            // C. Calculate Y-Axis Scaling (Min/Max of visible area)
+            let min = Infinity, max = -Infinity;
+            for (let c of renderData) {
+                if (c.l < min) min = c.l;
+                if (c.h > max) max = c.h;
             }
+            
+            // Add padding (10% top/bottom)
+            const range = max - min || 1;
+            const paddedMin = min - (range * 0.1);
+            const paddedMax = max + (range * 0.1);
+            const paddedRange = paddedMax - paddedMin;
 
-            // 5. Draw Candles
-            viewData.forEach((c, i) => {
-                const x = i * candleWidth + (gap/2);
-                const openY = getY(c.open);
-                const closeY = getY(c.close);
-                const highY = getY(c.high);
-                const lowY = getY(c.low);
+            // Helper: Price -> Pixel Y
+            const toY = (price) => h - ((price - paddedMin) / paddedRange * h);
+
+            // D. Draw Grid & Labels
+            ctx.strokeStyle = CONFIG.gridColor;
+            ctx.lineWidth = 1;
+            ctx.font = CONFIG.font;
+            ctx.beginPath();
+            
+            // Vertical (Time) Grid - Crude approximation
+            // Horizontal (Price) Grid
+            for(let i=1; i<6; i++) {
+                const p = paddedMin + (paddedRange * (i/6));
+                const y = toY(p);
+                ctx.moveTo(0, y); ctx.lineTo(w, y);
                 
-                const isGreen = c.close >= c.open;
-                ctx.fillStyle = isGreen ? "#26a69a" : "#ef5350";
+                // Text
+                ctx.fillStyle = CONFIG.textColor;
+                ctx.fillText(p.toFixed(2), w - 50, y - 5);
+            }
+            ctx.stroke();
+
+            // E. Draw Candles
+            // We draw loop through renderData
+            // X Calculation: The last candle in renderData corresponds to the rightmost slot
+            
+            // Fine-tune offset for smooth scrolling (fractional part)
+            const pixelShift = (state.scrollOffset % 1) * candleFullWidth;
+
+            renderData.forEach((c, i) => {
+                // Logic: Index 0 of renderData is the left-most candle
+                // We want right-alignment.
+                // Distance from right edge = (number of candles from end) * width
+                
+                const countFromRight = (renderData.length - 1) - i;
+                
+                // X position of the *center* of the candle
+                const x = w - (countFromRight * candleFullWidth) - (candleFullWidth/2) + pixelShift;
+                
+                const open = toY(c.o);
+                const close = toY(c.c);
+                const high = toY(c.h);
+                const low = toY(c.l);
+
+                const isUp = c.c >= c.o;
+                ctx.fillStyle = isUp ? CONFIG.upColor : CONFIG.downColor;
                 ctx.strokeStyle = ctx.fillStyle;
 
-                // Draw Wick
+                // Wick
                 ctx.beginPath();
-                ctx.moveTo(x + bodyWidth/2, highY);
-                ctx.lineTo(x + bodyWidth/2, lowY);
+                ctx.moveTo(x, high);
+                ctx.lineTo(x, low);
                 ctx.stroke();
 
-                // Draw Body
-                let bodyHeight = Math.abs(closeY - openY);
-                if(bodyHeight < 1) bodyHeight = 1; // Ensure thin candles are visible
-                
-                ctx.fillRect(
-                    x, 
-                    Math.min(openY, closeY), 
-                    bodyWidth, 
-                    bodyHeight
-                );
+                // Body
+                const bodyH = Math.max(1, Math.abs(close - open));
+                const bodyY = Math.min(open, close);
+                ctx.fillRect(x - bodyWidth/2, bodyY, bodyWidth, bodyH);
             });
-            
-            // Draw current price line
-            const lastClose = viewData[viewData.length-1].close;
-            const lastY = getY(lastClose);
-            ctx.strokeStyle = "#fff";
-            ctx.setLineDash([5, 5]);
-            ctx.beginPath(); ctx.moveTo(0, lastY); ctx.lineTo(width, lastY); ctx.stroke();
-            ctx.setLineDash([]);
-        }
 
-        // --- 3. DATA & APP LOGIC ---
-        const uiPrice = document.getElementById('price-display');
-        const uiStatus = document.getElementById('status-display');
-        const uiSource = document.getElementById('source-label');
-        let currentPrice = 0;
+            // F. Crosshair & Info
+            if (state.mouseX >= 0 && state.mouseY >= 0 && state.mouseX <= w && state.mouseY <= h) {
+                // Draw Lines
+                ctx.strokeStyle = '#888';
+                ctx.setLineDash([4, 4]);
+                ctx.beginPath();
+                ctx.moveTo(0, state.mouseY); ctx.lineTo(w, state.mouseY); // Horz
+                ctx.moveTo(state.mouseX, 0); ctx.lineTo(state.mouseX, h); // Vert
+                ctx.stroke();
+                ctx.setLineDash([]);
 
-        function updateUI(price) {
-            const color = price > currentPrice ? '#26a69a' : (price < currentPrice ? '#ef5350' : '#fff');
-            uiPrice.style.color = color;
-            uiPrice.innerText = `$${price.toFixed(2)}`;
-            document.title = `$${price.toFixed(2)} Gold`;
-            currentPrice = price;
-            resize(); // Redraw chart
-        }
+                // Update DOM Labels
+                // Price Label
+                const hoverPrice = paddedMax - ((state.mouseY / h) * paddedRange);
+                lblPrice.style.display = 'block';
+                lblPrice.style.top = (state.mouseY - 10) + 'px';
+                lblPrice.innerText = hoverPrice.toFixed(2);
 
-        function addCandle(newCandle) {
-            // If new candle is same minute as last one, update last one. Otherwise push.
-            if(candles.length > 0) {
-                const last = candles[candles.length - 1];
-                // Simple check: if time diff < 60s, update.
-                // Note: API timestamps are usually start of minute.
-                if(newCandle.time === last.time) {
-                    candles[candles.length - 1] = newCandle;
-                } else if (newCandle.time > last.time) {
-                    candles.push(newCandle);
+                // Time Label
+                // Convert mouseX to index
+                // x = w - offsetPixels -> offsetPixels = w - x
+                // offsetCandles = offsetPixels / candleWidth
+                // index = total - scrollOffset - offsetCandles
+                const distFromRight = w - state.mouseX;
+                const candleDist = distFromRight / candleFullWidth;
+                const targetIndex = Math.floor(state.data.length - 1 - state.scrollOffset + (pixelShift/candleFullWidth) - candleDist); // Approx
+                
+                if (state.data[targetIndex]) {
+                    const date = new Date(state.data[targetIndex].t * 1000);
+                    let timeStr = date.getHours() + ":" + (date.getMinutes()<10?'0':'') + date.getMinutes();
+                    if(state.timeframe === '1d') timeStr = date.toLocaleDateString();
+                    
+                    lblTime.style.display = 'block';
+                    lblTime.style.left = (state.mouseX - 20) + 'px';
+                    lblTime.innerText = timeStr;
                 }
             } else {
-                candles.push(newCandle);
+                lblPrice.style.display = 'none';
+                lblTime.style.display = 'none';
             }
-            // Keep memory check (max 200 candles)
-            if(candles.length > 200) candles.shift();
-            updateUI(newCandle.close);
+
+            // G. Show "Reset" button if scrolled back
+            if(state.scrollOffset > 5) btnReset.style.display = 'block';
+            else btnReset.style.display = 'none';
         }
 
-        // --- 4. DATA SOURCES ---
 
-        async function start() {
-            resize(); // Init canvas size
-            
-            // Try Real Data
-            log("Fetching real data...");
-            try {
-                // Fetch History
-                const res = await fetch('https://min-api.cryptocompare.com/data/v2/histominute?fsym=PAXG&tsym=USD&limit=100');
-                if(!res.ok) throw new Error("Fetch failed");
-                const json = await res.json();
-                if(json.Response !== 'Success') throw new Error(json.Message);
+        // --- 2. INTERACTION HANDLERS ---
+        
+        // Panning (Drag)
+        container.addEventListener('mousedown', e => {
+            state.dragging = true;
+            state.lastX = e.clientX;
+            container.style.cursor = 'grabbing';
+        });
 
-                // Populate History
-                candles = json.Data.Data.map(d => ({
-                    time: d.time,
-                    open: d.open, high: d.high, low: d.low, close: d.close
-                }));
-                log("History loaded. Connecting WS...");
-                uiSource.innerText = "Source: Market Data (PAXG)";
+        window.addEventListener('mouseup', () => {
+            state.dragging = false;
+            container.style.cursor = 'crosshair';
+        });
 
-                // Connect WebSocket
-                const ws = new WebSocket('wss://stream.binance.com:9443/ws/paxgusdt@kline_1m');
+        container.addEventListener('mousemove', e => {
+            const rect = container.getBoundingClientRect();
+            state.mouseX = e.clientX - rect.left;
+            state.mouseY = e.clientY - rect.top;
+
+            if (state.dragging) {
+                const dx = e.clientX - state.lastX;
+                state.lastX = e.clientX;
                 
-                ws.onopen = () => {
-                    log("WebSocket Open.");
-                    uiStatus.innerText = "● LIVE";
-                    uiStatus.className = "status-text st-live";
-                };
+                // Dragging right (positive dx) -> Move into past -> Increase Offset
+                const sensitivity = 1;
+                const moveCandles = dx / state.zoom;
+                
+                state.scrollOffset += moveCandles;
+                
+                // Clamp
+                if (state.scrollOffset < 0) state.scrollOffset = 0;
+                if (state.scrollOffset > state.data.length - 20) state.scrollOffset = state.data.length - 20;
+            }
+            draw();
+        });
 
-                ws.onmessage = (e) => {
-                    const msg = JSON.parse(e.data);
-                    const k = msg.k;
-                    const c = {
-                        time: k.t / 1000,
-                        open: parseFloat(k.o),
-                        high: parseFloat(k.h),
-                        low: parseFloat(k.l),
-                        close: parseFloat(k.c)
-                    };
-                    addCandle(c);
-                };
+        container.addEventListener('mouseleave', () => {
+            state.mouseX = -1;
+            state.mouseY = -1;
+            draw();
+        });
 
-                ws.onerror = (e) => {
-                    throw new Error("WebSocket error");
-                };
+        // Zooming (Wheel)
+        container.addEventListener('wheel', e => {
+            e.preventDefault();
+            const dir = Math.sign(e.deltaY);
+            // Zoom out (+) -> decrease width. Zoom in (-) -> increase width
+            const speed = 1;
+            if (dir < 0) state.zoom += speed;
+            else state.zoom -= speed;
 
-            } catch (e) {
-                log("Real data failed: " + e.message);
+            // Clamp Zoom
+            if (state.zoom < 2) state.zoom = 2; // Maximum Density
+            if (state.zoom > 100) state.zoom = 100; // Maximum Detail
+            
+            draw();
+        }, { passive: false });
+
+        function resetToLive() {
+            state.scrollOffset = 0;
+            draw();
+        }
+
+        // --- 3. DATA API ---
+
+        async function setTF(tf, agg) {
+            state.timeframe = tf;
+            state.apiAgg = agg;
+            
+            // UI
+            document.querySelectorAll('.tf-btn').forEach(b => b.classList.remove('active'));
+            event.target.classList.add('active');
+
+            await fetchData();
+        }
+
+        async function fetchData() {
+            elStatus.innerText = `Fetching ${state.timeframe} data...`;
+            elStatus.style.color = '#e0e0e0';
+            
+            try {
+                // Determine API endpoint based on timeframe
+                // CryptoCompare Logic:
+                // < 1h -> histominute
+                // < 24h -> histohour
+                // >= 24h -> histoday
+                let endpoint = 'histominute';
+                let limit = 1000;
+                let aggregate = state.apiAgg;
+
+                if (state.apiAgg >= 60) {
+                    endpoint = 'histohour';
+                    aggregate = state.apiAgg / 60;
+                }
+                if (state.apiAgg >= 1440) {
+                    endpoint = 'histoday';
+                    aggregate = 1; // 1 day
+                }
+
+                const url = `https://min-api.cryptocompare.com/data/v2/${endpoint}?fsym=PAXG&tsym=USD&limit=${limit}&aggregate=${aggregate}`;
+                
+                const res = await fetch(url);
+                const json = await res.json();
+
+                if (json.Response === 'Success') {
+                    // Map Data to short keys (o, h, l, c, t) to save memory
+                    state.data = json.Data.Data.map(d => ({
+                        t: d.time,
+                        o: d.open,
+                        h: d.high,
+                        l: d.low,
+                        c: d.close
+                    }));
+                    
+                    // Update current Price
+                    const last = state.data[state.data.length-1];
+                    updatePrice(last.c);
+
+                    elStatus.innerText = "● Market Data Active";
+                    elStatus.style.color = CONFIG.upColor;
+                    
+                    // Reset view to latest
+                    state.scrollOffset = 0;
+                    draw();
+                } else {
+                    throw new Error("API Error");
+                }
+            } catch (err) {
+                console.error(err);
                 startSimulation();
             }
         }
 
-        // --- 5. SIMULATION MODE (Fallback) ---
-        function startSimulation() {
-            log("Starting Simulation Mode...");
-            uiSource.innerText = "Source: Simulator (Demo)";
-            uiStatus.innerText = "● SIMULATION";
-            uiStatus.className = "status-text st-sim";
-
-            // Generate fake history
-            let price = 2600.00;
-            let time = Math.floor(Date.now()/1000) - 3600;
-            
-            for(let i=0; i<60; i++) {
-                let o = price;
-                let c = o + (Math.random()-0.5)*2;
-                let h = Math.max(o,c) + Math.random();
-                let l = Math.min(o,c) - Math.random();
-                candles.push({ time, open:o, high:h, low:l, close:c });
-                price = c;
-                time += 60;
-            }
-            updateUI(price);
-
-            // Fake live tick loop
-            setInterval(() => {
-                let last = candles[candles.length-1];
-                let now = Math.floor(Date.now()/1000);
-                
-                // New minute?
-                if(now - last.time >= 60) {
-                    let newC = { time: now, open: last.close, high: last.close, low: last.close, close: last.close };
-                    candles.push(newC);
-                    last = newC;
-                    if(candles.length > 200) candles.shift();
-                }
-
-                // Move price
-                let move = (Math.random()-0.5) * 0.5;
-                last.close += move;
-                if(last.close > last.high) last.high = last.close;
-                if(last.close < last.low) last.low = last.close;
-                
-                updateUI(last.close);
-            }, 1000);
+        function updatePrice(price) {
+            elPrice.innerText = `$${price.toFixed(2)}`;
+            document.title = `$${price.toFixed(2)} Gold`;
         }
 
-        // Start
-        start();
+        // --- 4. SIMULATION FALLBACK ---
+        // If API fails (CORS/Network), generate data so chart is still interactive
+        function startSimulation() {
+            elStatus.innerText = "● Simulation Mode (Offline)";
+            elStatus.style.color = "#ff9800";
+            
+            state.data = [];
+            let price = 2650.00;
+            let time = Math.floor(Date.now()/1000) - (1000 * 60 * state.apiAgg);
+
+            for(let i=0; i<1000; i++) {
+                let open = price;
+                let change = (Math.random() - 0.5) * 5;
+                let close = open + change;
+                let high = Math.max(open, close) + Math.random();
+                let low = Math.min(open, close) - Math.random();
+                
+                state.data.push({ t: time, o: open, h: high, l: low, c: close });
+                price = close;
+                time += (60 * state.apiAgg);
+            }
+            updatePrice(price);
+            state.scrollOffset = 0;
+            draw();
+        }
+
+        // --- INIT ---
+        resize();
+        fetchData();
 
     </script>
 </body>
