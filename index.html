@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Real-Time Gold Price (XAU/USD)</title>
+    <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #121212;
+            color: #d1d4dc;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            height: 100vh;
+        }
+
+        header {
+            width: 100%;
+            padding: 20px;
+            background-color: #1e1e1e;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #2a2a2a;
+            box-sizing: border-box;
+        }
+
+        h1 {
+            margin: 0;
+            font-size: 24px;
+            color: #d4af37; /* Gold color */
+        }
+
+        #price-display {
+            font-size: 24px;
+            font-weight: bold;
+            color: #ffffff;
+        }
+
+        .status {
+            font-size: 12px;
+            color: #4caf50;
+        }
+
+        #chart-container {
+            width: 100%;
+            flex-grow: 1;
+            position: relative;
+        }
+
+        .disclaimer {
+            font-size: 11px;
+            color: #555;
+            padding: 5px;
+            text-align: center;
+            width: 100%;
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div>
+            <h1>GOLD / USD</h1>
+            <div class="status">● Live Market Data</div>
+        </div>
+        <div id="price-display">Loading...</div>
+    </header>
+
+    <div id="chart-container"></div>
+    
+    <div class="disclaimer">
+        Data Source: PAX Gold (PAXG/USDT) via Binance Public API. Used as a high-frequency proxy for XAU/USD.
+    </div>
+
+    <script>
+        // 1. Initialize the Chart
+        const chartOptions = {
+            layout: {
+                textColor: '#d1d4dc',
+                background: { type: 'solid', color: '#121212' },
+            },
+            grid: {
+                vertLines: { color: '#2B2B43' },
+                horzLines: { color: '#2B2B43' },
+            },
+            crosshair: {
+                mode: LightweightCharts.CrosshairMode.Normal,
+            },
+            rightPriceScale: {
+                borderColor: '#2B2B43',
+            },
+            timeScale: {
+                borderColor: '#2B2B43',
+                timeVisible: true,
+            },
+        };
+
+        const container = document.getElementById('chart-container');
+        const chart = LightweightCharts.createChart(container, chartOptions);
+
+        // Make chart responsive
+        window.addEventListener('resize', () => {
+            chart.applyOptions({ width: container.clientWidth, height: container.clientHeight });
+        });
+
+        // 2. Configure Candle Series
+        const candlestickSeries = chart.addCandlestickSeries({
+            upColor: '#26a69a',        // Green
+            downColor: '#ef5350',      // Red
+            borderVisible: false,
+            wickUpColor: '#26a69a',
+            wickDownColor: '#ef5350',
+        });
+
+        const priceDisplay = document.getElementById('price-display');
+
+        // 3. Fetch Historical Data (REST API)
+        // We use Binance API for PAXGUSDT (Pax Gold) as a proxy for Gold prices to get free real-time data
+        const binanceSymbol = 'PAXGUSDT';
+        const interval = '1m'; // 1 minute candles
+
+        fetch(`https://api.binance.com/api/v3/klines?symbol=${binanceSymbol}&interval=${interval}&limit=1000`)
+            .then(res => res.json())
+            .then(data => {
+                const cdata = data.map(d => {
+                    return {
+                        time: d[0] / 1000, // Convert ms to seconds
+                        open: parseFloat(d[1]),
+                        high: parseFloat(d[2]),
+                        low: parseFloat(d[3]),
+                        close: parseFloat(d[4]),
+                    };
+                });
+                
+                candlestickSeries.setData(cdata);
+                
+                // Set initial price display
+                const last = cdata[cdata.length - 1];
+                updatePriceDisplay(last.close);
+            })
+            .catch(err => console.error(err));
+
+        // 4. Connect to Real-time WebSocket Stream
+        const ws = new WebSocket(`wss://stream.binance.com:9443/ws/${binanceSymbol.toLowerCase()}@kline_${interval}`);
+
+        ws.onmessage = (event) => {
+            const message = JSON.parse(event.data);
+            const kline = message.k;
+
+            const candle = {
+                time: kline.t / 1000,
+                open: parseFloat(kline.o),
+                high: parseFloat(kline.h),
+                low: parseFloat(kline.l),
+                close: parseFloat(kline.c),
+            };
+
+            // Update the chart with the live candle
+            candlestickSeries.update(candle);
+            updatePriceDisplay(candle.close);
+        };
+
+        function updatePriceDisplay(price) {
+            priceDisplay.innerText = `$${price.toFixed(2)}`;
+            priceDisplay.style.color = '#d4af37'; // Gold color text
+            document.title = `$${price.toFixed(2)} | Gold Chart`;
+        }
+
+    </script>
+</body>
+</html>
