@@ -3,12 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gold Chart + Automated Elliot Wave</title>
+    <title>Pro Gold Chart + Elliot Wave</title>
     <style>
+        /* --- CSS STYLING --- */
         body {
             background-color: #0d0d0d;
             color: #c9c9c9;
-            font-family: 'Segoe UI', Roboto, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             margin: 0;
             display: flex;
             flex-direction: column;
@@ -17,77 +18,64 @@
             user-select: none;
         }
 
+        /* HEADER */
         header {
             background-color: #161616;
-            padding: 10px 15px;
+            padding: 8px 15px;
             display: flex;
             justify-content: space-between;
             align-items: center;
             border-bottom: 1px solid #2a2a2a;
+            flex-shrink: 0;
+            z-index: 10;
         }
 
         .left-panel { display: flex; align-items: center; gap: 20px; }
         
         h1 {
             margin: 0;
-            font-size: 18px;
+            font-size: 16px;
             color: #d4af37;
             font-weight: 700;
+            letter-spacing: 0.5px;
         }
 
-        .tf-group {
-            display: flex;
-            background: #222;
-            border-radius: 4px;
-            padding: 2px;
-        }
+        .tf-group { display: flex; background: #222; border-radius: 4px; padding: 2px; }
         .tf-btn {
-            background: transparent;
-            border: none;
-            color: #777;
-            padding: 4px 10px;
-            font-size: 12px;
-            font-weight: 600;
-            cursor: pointer;
-            border-radius: 2px;
-            transition: all 0.2s;
+            background: transparent; border: none; color: #777;
+            padding: 4px 10px; font-size: 12px; font-weight: 600;
+            cursor: pointer; border-radius: 2px; transition: 0.2s;
         }
         .tf-btn:hover { color: #fff; background: #333; }
         .tf-btn.active { color: #000; background: #d4af37; }
 
         .price-panel { text-align: right; }
-        #price-main { font-size: 20px; font-weight: bold; color: #fff; }
-        #wave-status { font-size: 11px; color: #00b0ff; margin-top: 2px;}
+        #price-main { font-size: 18px; font-weight: bold; color: #fff; }
+        #status-msg { font-size: 10px; color: #555; }
 
+        /* CHART AREA */
         #chart-wrapper {
             flex-grow: 1;
             position: relative;
-            cursor: crosshair;
             overflow: hidden;
+            background: #0d0d0d;
         }
         
         canvas { display: block; width: 100%; height: 100%; }
 
-        /* Floating Tooltips */
-        #crosshair-label {
-            position: absolute;
-            right: 0;
-            background: #d4af37;
-            color: #000;
-            padding: 2px 4px;
-            font-size: 11px;
-            font-weight: bold;
-            display: none;
-            pointer-events: none;
+        /* TOOLTIPS */
+        .tooltip {
+            position: absolute; display: none; pointer-events: none;
+            font-size: 11px; z-index: 20;
         }
+        #tip-price { right: 0; background: #d4af37; color: #000; padding: 2px 5px; font-weight: bold;}
+        #tip-time { bottom: 0; background: #333; color: #fff; padding: 3px 6px; }
 
+        /* LEGEND */
         #legend {
-            position: absolute;
-            top: 10px;
-            left: 10px;
-            pointer-events: none;
-            font-size: 10px;
-            color: #555;
+            position: absolute; top: 10px; left: 15px;
+            pointer-events: none; font-size: 10px; color: #555;
+            z-index: 5;
         }
     </style>
 </head>
@@ -106,496 +94,493 @@
         </div>
         <div class="price-panel">
             <div id="price-main">---.--</div>
-            <div id="wave-status">Calculating Waves...</div>
+            <div id="status-msg">System Ready</div>
         </div>
     </header>
 
     <div id="chart-wrapper">
         <canvas id="cvs"></canvas>
-        <div id="crosshair-label"></div>
+        <div id="tip-price" class="tooltip"></div>
+        <div id="tip-time" class="tooltip"></div>
         <div id="legend">
-            <span style="color:#00b0ff">── Swing Structure</span><br>
-            <span style="color:#fff">① ② ③ ④ ⑤ Impulse Detected</span>
+            Scroll = Width | Drag Scale = Height | Shift+Drag = Move Y<br>
+            <span style="color:#00b0ff">── Swing</span> <span style="color:#fff">①-⑤ Wave</span>
         </div>
     </div>
 
     <script>
         /**
-         * ELLIOT WAVE & CHART ENGINE
-         * 1. Fetches Data
-         * 2. Renders Candlesticks
-         * 3. Calculates ZigZag Pivots
-         * 4. Validates 5-Wave Impulse Rules
+         * PROFESSIONAL CHART ENGINE + ELLIOT WAVE
+         * Features: Zero Dependencies, Canvas Rendering, EW Logic, 2-Axis Navigation
          */
 
         const CONFIG = {
-            upColor: '#00e676',
-            downColor: '#ff1744',
-            bgColor: '#0d0d0d',
-            gridColor: '#1f1f1f',
-            waveColor: 'rgba(0, 176, 255, 0.6)', // Light Blue for waves
-            waveLabelColor: '#ffffff'
+            colors: {
+                bg: '#0d0d0d', grid: '#1a1a1a', text: '#555',
+                up: '#089981', down: '#f23645',
+                waveLine: 'rgba(0, 176, 255, 0.5)', waveText: '#fff'
+            },
+            scaleWidth: 50, // Width of right price scale
         };
 
         class App {
             constructor() {
+                // Data
                 this.data = [];
-                this.pivots = []; // The simplified wave points
-                this.waves = [];  // Validated 1-2-3-4-5 sequences
-
-                this.state = {
-                    timeframe: '1m',
-                    apiAgg: 1,
-                    scrollOffset: 0,
-                    zoom: 15, // Candle width
-                    dragging: false,
-                    lastX: 0,
-                    mouseX: -1,
-                    mouseY: -1,
-                    width: 0,
-                    height: 0
+                this.pivots = [];
+                this.waves = [];
+                
+                // View State
+                this.view = {
+                    tf: '1m', agg: 1,
+                    offset: 0,          // X-axis scroll (candles from right)
+                    zoomX: 10,          // Candle Width (px)
+                    scaleY: 1.0,        // Y-axis multiplier (Stretch)
+                    shiftY: 0,          // Y-axis pan
+                    autoScale: true     // Auto-fit Y axis
                 };
 
+                // Interaction State
+                this.input = {
+                    dragging: false, resizingY: false,
+                    lastX: 0, lastY: 0,
+                    mouseX: 0, mouseY: 0
+                };
+
+                // DOM
                 this.dom = {
-                    canvas: document.getElementById('cvs'),
-                    ctx: document.getElementById('cvs').getContext('2d', { alpha: false }),
-                    container: document.getElementById('chart-wrapper'),
+                    wrap: document.getElementById('chart-wrapper'),
+                    cvs: document.getElementById('cvs'),
+                    ctx: document.getElementById('cvs').getContext('2d', {alpha: false}),
                     price: document.getElementById('price-main'),
-                    status: document.getElementById('wave-status'),
-                    label: document.getElementById('crosshair-label')
+                    status: document.getElementById('status-msg'),
+                    tipP: document.getElementById('tip-price'),
+                    tipT: document.getElementById('tip-time')
                 };
 
-                this.initListeners();
+                this.bindEvents();
                 this.resize();
                 this.fetchData();
             }
 
-            // --- ELLIOT WAVE LOGIC ---
+            // --- 1. CORE LOGIC: ELLIOT WAVE DETECTION ---
+            analyzeWaves() {
+                if(this.data.length < 5) return;
 
-            /**
-             * 1. Identify Swings (Highs/Lows)
-             * Uses a simplified ZigZag approach.
-             * Deviation determines how much price must move to form a new leg.
-             */
-            calculateWaves() {
-                if (this.data.length < 10) return;
-
-                // 1. Calculate Pivots (ZigZag)
-                // Adjust deviation based on timeframe volatility approximation
-                let deviation = 0.05; // 0.05% movement
-                if(this.state.timeframe === '1m') deviation = 0.2; // tighter for low TF
-                else if(this.state.timeframe === '1h') deviation = 1.5; 
-                else if(this.state.timeframe === '1d') deviation = 15.0;
+                // A. ZigZag Pivot Detection
+                // Adjust sensitivity based on TF to filter noise
+                let dev = 0.5; // Default deviation
+                if(this.view.tf === '1m') dev = 0.15;
+                if(this.view.tf === '15m') dev = 0.8;
+                if(this.view.tf === '1d') dev = 15.0;
 
                 this.pivots = [];
+                let dir = 0; // 1 up, -1 down
+                let lastP = this.data[0]; 
+                let lastIdx = 0;
                 
-                let direction = 0; // 1 = up, -1 = down
-                let lastPivot = this.data[0];
-                let lastPivotIdx = 0;
-
-                this.pivots.push({ idx: 0, ...this.data[0], type: 'start' });
+                this.pivots.push({i:0, v:this.data[0].c}); // Start point
 
                 for(let i=1; i<this.data.length; i++) {
                     const c = this.data[i];
-                    const changeFromLast = Math.abs(c.c - lastPivot.c);
-
-                    if (direction === 0) {
-                        if (c.c > lastPivot.c + deviation) direction = 1;
-                        if (c.c < lastPivot.c - deviation) direction = -1;
-                        lastPivot = c;
-                        lastPivotIdx = i;
-                        continue;
-                    }
-
-                    if (direction === 1) { // Currently going UP
-                        if (c.h > lastPivot.h) {
-                            // New High, update current leg tip
-                            lastPivot = c;
-                            lastPivotIdx = i;
-                        } else if (c.c < lastPivot.h - deviation) {
-                            // Reversal Detected! Lock in previous high
-                            this.pivots.push({ idx: lastPivotIdx, val: lastPivot.h, type: 'high' });
-                            direction = -1;
-                            lastPivot = c;
-                            lastPivotIdx = i;
+                    if(dir === 0) {
+                        if(c.c > lastP.c + dev) dir = 1;
+                        if(c.c < lastP.c - dev) dir = -1;
+                        lastP = c; lastIdx = i;
+                    } else if(dir === 1) { // Up trend
+                        if(c.h > lastP.h) { lastP = c; lastIdx = i; }
+                        else if(c.c < lastP.h - dev) { // Reverse
+                            this.pivots.push({i:lastIdx, v:lastP.h, type:'H'});
+                            dir = -1; lastP = c; lastIdx = i;
                         }
-                    } else { // Currently going DOWN
-                        if (c.l < lastPivot.l) {
-                            // New Low, update current leg tip
-                            lastPivot = c;
-                            lastPivotIdx = i;
-                        } else if (c.c > lastPivot.l + deviation) {
-                            // Reversal Detected! Lock in previous low
-                            this.pivots.push({ idx: lastPivotIdx, val: lastPivot.l, type: 'low' });
-                            direction = 1;
-                            lastPivot = c;
-                            lastPivotIdx = i;
+                    } else { // Down trend
+                        if(c.l < lastP.l) { lastP = c; lastIdx = i; }
+                        else if(c.c > lastP.l + dev) { // Reverse
+                            this.pivots.push({i:lastIdx, v:lastP.l, type:'L'});
+                            dir = 1; lastP = c; lastIdx = i;
                         }
                     }
                 }
-                // Add the live candle as the final provisional pivot
-                this.pivots.push({ idx: this.data.length-1, val: this.data[this.data.length-1].c, type: 'live' });
+                this.pivots.push({i:this.data.length-1, v:this.data[this.data.length-1].c, type:'Live'});
 
-                // 2. Identify 1-2-3-4-5 Impulse Patterns
-                this.detectImpulseWaves();
-            }
-
-            /**
-             * 2. Pattern Matcher
-             * Iterates through pivots to find sequences matching EW Rules.
-             */
-            detectImpulseWaves() {
+                // B. Impulse Pattern Recognition (1-2-3-4-5)
                 this.waves = [];
                 const p = this.pivots;
                 if(p.length < 6) return;
 
-                // Loop through pivots looking for a Start point followed by 5 swings
-                for(let i=0; i < p.length - 5; i++) {
-                    
-                    // Possible points: Start(0), 1(1), 2(2), 3(3), 4(4), 5(5)
-                    const start = p[i];
-                    const w1 = p[i+1];
-                    const w2 = p[i+2];
-                    const w3 = p[i+3];
-                    const w4 = p[i+4];
-                    const w5 = p[i+5];
+                for(let k=0; k < p.length - 5; k++) {
+                    const start = p[k];
+                    const w1 = p[k+1]; const w2 = p[k+2];
+                    const w3 = p[k+3]; const w4 = p[k+4];
+                    const w5 = p[k+5];
 
-                    // Check Direction (Must be High-Low-High-Low-High or inverse)
-                    const isBullish = w1.val > start.val;
-                    if (isBullish && w2.val > w1.val) continue; // Invalid sequence structure
+                    // Bullish Sequence Check
+                    if(w1.v > start.v && w2.v < w1.v && w3.v > w2.v && w4.v < w3.v && w5.v > w4.v) {
+                        // Rule 1: W2 > Start (No 100% retrace)
+                        if(w2.v <= start.v) continue;
+                        // Rule 2: W3 not shortest
+                        const l1 = Math.abs(w1.v - start.v);
+                        const l3 = Math.abs(w3.v - w2.v);
+                        const l5 = Math.abs(w5.v - w4.v);
+                        if(l3 < l1 && l3 < l5) continue;
+                        // Rule 3: W4 > W1 (No overlap)
+                        if(w4.v <= w1.v) continue;
 
-                    // --- ELLIOT WAVE RULES (Bullish Case) ---
-                    if (isBullish) {
-                        // Rule 1: Wave 2 cannot retrace 100% of Wave 1
-                        if (w2.val <= start.val) continue;
-
-                        // Rule 3: Wave 4 cannot enter territory of Wave 1
-                        if (w4.val <= w1.val) continue;
-
-                        // Rule 2: Wave 3 cannot be the shortest (Calculations)
-                        const len1 = Math.abs(w1.val - start.val);
-                        const len3 = Math.abs(w3.val - w2.val);
-                        const len5 = Math.abs(w5.val - w4.val);
-
-                        // If 3 is shortest, disqualify
-                        if (len3 < len1 && len3 < len5) continue;
-
-                        // Basic Trend Validation (Wave 3 peak higher than Wave 1)
-                        if (w3.val <= w1.val) continue;
-                        if (w5.val <= w3.val) continue;
-
-                        // If we passed all checks, we have a valid sequence!
-                        this.waves.push({
-                            type: 'bull',
-                            points: [
-                                {i: w1.idx, v: w1.val, l: '1'},
-                                {i: w2.idx, v: w2.val, l: '2'},
-                                {i: w3.idx, v: w3.val, l: '3'},
-                                {i: w4.idx, v: w4.val, l: '4'},
-                                {i: w5.idx, v: w5.val, l: '5'}
-                            ]
-                        });
-                        
-                        // Skip ahead to avoid overlapping conflicting counts
-                        i += 4; 
+                        // Add Wave
+                        this.waves.push({ type: 'bull', pts: [w1, w2, w3, w4, w5] });
+                        k += 4; // Skip processed legs
                     }
-                    
-                    // --- BEARISH RULES (Inverse) ---
-                    else {
-                        if (w2.val >= start.val) continue; // R1
-                        if (w4.val >= w1.val) continue;    // R3
+                    // Bearish Sequence Check
+                    else if(w1.v < start.v && w2.v > w1.v && w3.v < w2.v && w4.v > w3.v && w5.v < w4.v) {
+                        if(w2.v >= start.v) continue;
+                        const l1 = Math.abs(start.v - w1.v);
+                        const l3 = Math.abs(w2.v - w3.v);
+                        const l5 = Math.abs(w4.v - w5.v);
+                        if(l3 < l1 && l3 < l5) continue;
+                        if(w4.v >= w1.v) continue;
                         
-                        const len1 = Math.abs(start.val - w1.val);
-                        const len3 = Math.abs(w2.val - w3.val);
-                        const len5 = Math.abs(w4.val - w5.val);
-                        
-                        if (len3 < len1 && len3 < len5) continue; // R2
-                        
-                        if (w3.val >= w1.val) continue;
-                        if (w5.val >= w3.val) continue;
-
-                        this.waves.push({
-                            type: 'bear',
-                            points: [
-                                {i: w1.idx, v: w1.val, l: '①'},
-                                {i: w2.idx, v: w2.val, l: '②'},
-                                {i: w3.idx, v: w3.val, l: '③'},
-                                {i: w4.idx, v: w4.val, l: '④'},
-                                {i: w5.idx, v: w5.val, l: '⑤'}
-                            ]
-                        });
-                        i += 4;
+                        this.waves.push({ type: 'bear', pts: [w1, w2, w3, w4, w5] });
+                        k += 4;
                     }
                 }
-                
-                this.dom.status.innerText = `Found ${this.waves.length} Valid Impulse Waves`;
             }
 
 
-            // --- RENDERING ---
-
+            // --- 2. RENDERING ENGINE ---
             draw() {
                 const ctx = this.dom.ctx;
-                const w = this.state.width;
-                const h = this.state.height;
+                const W = this.width;
+                const H = this.height;
+                const chartW = W - CONFIG.scaleWidth;
 
-                ctx.fillStyle = CONFIG.bgColor;
-                ctx.fillRect(0, 0, w, h);
+                // Clear
+                ctx.fillStyle = CONFIG.colors.bg;
+                ctx.fillRect(0, 0, W, H);
 
-                if (this.data.length === 0) return;
-
-                // 1. Calc Viewport
-                const candleW = this.state.zoom;
-                const visibleCount = Math.ceil(w / candleW) + 1;
-                let endIndex = this.data.length - 1 - Math.floor(this.state.scrollOffset);
-                let startIndex = endIndex - visibleCount;
-                if(endIndex >= this.data.length) endIndex = this.data.length-1;
-                if(startIndex < 0) startIndex = 0;
-
-                // 2. Scale Y-Axis
-                let min = Infinity, max = -Infinity;
-                for(let i=startIndex; i<=endIndex; i++) {
-                    let d = this.data[i];
-                    if(d.l < min) min = d.l;
-                    if(d.h > max) max = d.h;
+                if(this.data.length === 0) {
+                    ctx.fillStyle = CONFIG.colors.text; 
+                    ctx.fillText("Loading Market Data...", W/2-50, H/2);
+                    return;
                 }
-                const range = max - min;
-                const pMin = min - (range * 0.1);
-                const pMax = max + (range * 0.1);
-                const pRange = pMax - pMin || 1;
-                const toY = (v) => h - ((v - pMin) / pRange * h);
-                const toX = (idx) => {
-                    const diff = endIndex - idx;
-                    return w - (diff * candleW) - (candleW/2);
-                };
 
-                // 3. Draw Grid
-                ctx.strokeStyle = CONFIG.gridColor;
+                // 1. Calculate X-Axis (Time)
+                const zoom = this.view.zoomX;
+                const visCount = Math.ceil(chartW / zoom) + 1;
+                let endIdx = this.data.length - 1 - Math.floor(this.view.offset);
+                let startIdx = endIdx - visCount;
+                
+                // Bounds
+                if(endIdx >= this.data.length) endIdx = this.data.length - 1;
+                if(startIdx < 0) startIdx = 0;
+
+                const viewData = [];
+                for(let i=startIdx; i<=endIdx; i++) viewData.push(this.data[i]);
+
+                // 2. Calculate Y-Axis (Price)
+                // Find min/max of current view
+                let min = Infinity, max = -Infinity;
+                for(let c of viewData) {
+                    if(c.l < min) min = c.l;
+                    if(c.h > max) max = c.h;
+                }
+                
+                // Auto Scale or Manual Scale logic
+                if(this.view.autoScale) {
+                    const margin = (max - min) * 0.1;
+                    this.minP = min - margin;
+                    this.maxP = max + margin;
+                } else {
+                    // Manual: Apply ScaleY and ShiftY to the base center
+                    const mid = (min + max) / 2 + this.view.shiftY;
+                    const range = (max - min) / this.view.scaleY;
+                    this.minP = mid - range/2;
+                    this.maxP = mid + range/2;
+                }
+                
+                const pRange = this.maxP - this.minP || 1;
+                
+                // Transformers
+                const toY = (p) => H - ((p - this.minP) / pRange * H);
+                const toX = (i) => chartW - ((endIdx - i + 0.5) * zoom); // 0.5 centers candle
+
+                // 3. Draw Grid & Price Scale
+                ctx.strokeStyle = CONFIG.colors.grid;
                 ctx.lineWidth = 1;
                 ctx.beginPath();
-                for(let i=1; i<6; i++) {
-                    let p = pMin + (pRange*(i/6));
-                    let y = toY(p);
-                    ctx.moveTo(0, y); ctx.lineTo(w, y);
-                    ctx.fillStyle = '#444'; ctx.fillText(p.toFixed(2), w-40, y-4);
+                
+                // Horizontal Grid lines
+                const gridSteps = 6;
+                for(let i=0; i<=gridSteps; i++) {
+                    const price = this.minP + (pRange * (i/gridSteps));
+                    const y = toY(price);
+                    
+                    // Line
+                    ctx.moveTo(0, y); ctx.lineTo(chartW, y);
+                    
+                    // Label (Right Side)
+                    ctx.fillStyle = CONFIG.colors.text;
+                    ctx.font = "11px Arial";
+                    ctx.fillText(price.toFixed(2), chartW + 5, y + 4);
                 }
                 ctx.stroke();
 
-                // 4. Draw CANDLES
-                const bodyW = Math.max(1, candleW - 1);
-                for(let i=startIndex; i<=endIndex; i++) {
+                // Separator Line
+                ctx.strokeStyle = '#333';
+                ctx.beginPath(); ctx.moveTo(chartW, 0); ctx.lineTo(chartW, H); ctx.stroke();
+
+
+                // 4. Draw Candles
+                const bodyW = Math.max(1, zoom * 0.8);
+                
+                for(let i=startIdx; i<=endIdx; i++) {
                     const c = this.data[i];
                     const x = toX(i);
-                    const oY = toY(c.o);
-                    const cY = toY(c.c);
-                    const hY = toY(c.h);
-                    const lY = toY(c.l);
+                    const yO = toY(c.o);
+                    const yC = toY(c.c);
+                    const yH = toY(c.h);
+                    const yL = toY(c.l);
                     
                     const isUp = c.c >= c.o;
-                    ctx.fillStyle = isUp ? CONFIG.upColor : CONFIG.downColor;
+                    ctx.fillStyle = isUp ? CONFIG.colors.up : CONFIG.colors.down;
                     ctx.strokeStyle = ctx.fillStyle;
 
-                    ctx.beginPath(); ctx.moveTo(x, hY); ctx.lineTo(x, lY); ctx.stroke();
-                    ctx.fillRect(x - bodyW/2, Math.min(oY, cY), bodyW, Math.max(1, Math.abs(oY-cY)));
+                    // Wick
+                    ctx.beginPath(); ctx.moveTo(x, yH); ctx.lineTo(x, yL); ctx.stroke();
+                    // Body
+                    ctx.fillRect(x - bodyW/2, Math.min(yO, yC), bodyW, Math.max(1, Math.abs(yO - yC)));
                 }
 
-                // 5. Draw ELLIOT WAVES (ZigZag Lines)
+                // 5. Draw Elliot Waves
                 ctx.lineWidth = 2;
-                ctx.strokeStyle = CONFIG.waveColor;
+                ctx.strokeStyle = CONFIG.colors.waveLine;
                 ctx.beginPath();
-                let first = true;
+                let hasMove = false;
                 
-                // Filter pivots that are visible or connected to visible
-                for(let i=0; i<this.pivots.length; i++) {
-                    const p = this.pivots[i];
-                    // Optimization: Only draw if within reasonable range of viewport
-                    if(p.idx < startIndex - 20 && this.pivots[i+1]?.idx < startIndex - 20) continue;
-                    if(p.idx > endIndex + 20) break;
-
-                    const x = toX(p.idx);
-                    const y = toY(p.val);
-                    if(first) { ctx.moveTo(x, y); first = false; }
-                    else { ctx.lineTo(x, y); }
+                // Draw ZigZag
+                for(let p of this.pivots) {
+                    if(p.i < startIdx - 20 || p.i > endIdx + 20) continue; // Optimization
+                    const px = toX(p.i);
+                    const py = toY(p.v);
+                    if(!hasMove) { ctx.moveTo(px, py); hasMove = true; }
+                    else ctx.lineTo(px, py);
                 }
                 ctx.stroke();
 
-                // 6. Draw WAVE LABELS (1, 2, 3, 4, 5)
-                ctx.font = "bold 14px Arial";
+                // Draw Wave Labels
+                ctx.font = "bold 12px Arial";
                 ctx.textAlign = "center";
                 
                 this.waves.forEach(wave => {
-                    wave.points.forEach(pt => {
-                        if(pt.i >= startIndex && pt.i <= endIndex) {
+                    const labels = wave.type === 'bull' ? ['1','2','3','4','5'] : ['①','②','③','④','⑤'];
+                    const color = wave.type === 'bull' ? CONFIG.colors.up : CONFIG.colors.down;
+                    
+                    wave.pts.forEach((pt, idx) => {
+                        if(pt.i >= startIdx && pt.i <= endIdx) {
                             const x = toX(pt.i);
                             const y = toY(pt.v);
-                            
-                            // Background for text
-                            ctx.fillStyle = "rgba(0,0,0,0.7)";
-                            ctx.beginPath();
-                            ctx.arc(x, y, 9, 0, Math.PI*2);
-                            ctx.fill();
-
+                            // Background
+                            ctx.fillStyle = 'rgba(0,0,0,0.8)';
+                            ctx.beginPath(); ctx.arc(x, y, 8, 0, Math.PI*2); ctx.fill();
                             // Text
-                            ctx.fillStyle = wave.type === 'bull' ? '#00e676' : '#ff1744';
-                            ctx.fillText(pt.l, x, y + 5);
+                            ctx.fillStyle = color;
+                            ctx.fillText(labels[idx], x, y+4);
                         }
                     });
                 });
+                
+                // 6. Crosshair & Tooltips
+                this.updateCrosshair(toY, toX, pRange, chartW, H);
+            }
 
-                // 7. Crosshair
-                if(this.state.mouseX > 0) {
-                    ctx.strokeStyle = "#fff";
+            updateCrosshair(toY, toX, pRange, chartW, H) {
+                const mx = this.input.mouseX;
+                const my = this.input.mouseY;
+                const ctx = this.dom.ctx;
+
+                if(mx > 0 && mx < chartW && my > 0 && my < H) {
+                    // Lines
+                    ctx.strokeStyle = '#fff';
+                    ctx.setLineDash([4,4]);
                     ctx.lineWidth = 0.5;
-                    ctx.setLineDash([5,5]);
                     ctx.beginPath();
-                    ctx.moveTo(0, this.state.mouseY); ctx.lineTo(w, this.state.mouseY);
-                    ctx.moveTo(this.state.mouseX, 0); ctx.lineTo(this.state.mouseX, h);
+                    ctx.moveTo(0, my); ctx.lineTo(chartW, my);
+                    ctx.moveTo(mx, 0); ctx.lineTo(mx, H);
                     ctx.stroke();
                     ctx.setLineDash([]);
-                    
-                    const price = pMax - ((this.state.mouseY/h)*pRange);
-                    this.dom.label.style.display = "block";
-                    this.dom.label.style.top = (this.state.mouseY-10)+"px";
-                    this.dom.label.innerText = price.toFixed(2);
+
+                    // Price Tooltip
+                    const price = this.maxP - ((my / H) * pRange);
+                    this.dom.tipP.style.display = 'block';
+                    this.dom.tipP.style.top = (my - 10) + 'px';
+                    this.dom.tipP.innerText = price.toFixed(2);
                 } else {
-                    this.dom.label.style.display = "none";
+                    this.dom.tipP.style.display = 'none';
                 }
             }
 
-            // --- DATA HANDLING ---
+            // --- 3. INPUT HANDLING ---
+            bindEvents() {
+                const el = this.dom.wrap;
 
+                // Mouse Down
+                el.addEventListener('mousedown', e => {
+                    const rect = el.getBoundingClientRect();
+                    const x = e.clientX - rect.left;
+                    
+                    // Check if on Scale or Chart
+                    const isScale = x > (this.width - CONFIG.scaleWidth);
+                    
+                    if(isScale) {
+                        this.input.resizingY = true;
+                        el.style.cursor = 'ns-resize';
+                        this.view.autoScale = false; // Disable auto when manual dragging
+                    } else {
+                        this.input.dragging = true;
+                        el.style.cursor = 'grabbing';
+                    }
+                    this.input.lastX = e.clientX;
+                    this.input.lastY = e.clientY;
+                });
+
+                // Mouse Up
+                window.addEventListener('mouseup', () => {
+                    this.input.dragging = false;
+                    this.input.resizingY = false;
+                    el.style.cursor = 'default';
+                });
+
+                // Mouse Move
+                el.addEventListener('mousemove', e => {
+                    const rect = el.getBoundingClientRect();
+                    this.input.mouseX = e.clientX - rect.left;
+                    this.input.mouseY = e.clientY - rect.top;
+
+                    const dx = e.clientX - this.input.lastX;
+                    const dy = e.clientY - this.input.lastY;
+                    this.input.lastX = e.clientX;
+                    this.input.lastY = e.clientY;
+
+                    // 1. Dragging Price Scale (Stretch/Squash)
+                    if(this.input.resizingY) {
+                        const sensitivity = 0.01;
+                        this.view.scaleY += dy * -sensitivity; 
+                        if(this.view.scaleY < 0.1) this.view.scaleY = 0.1;
+                        this.draw();
+                        return;
+                    }
+
+                    // 2. Dragging Chart (Pan)
+                    if(this.input.dragging) {
+                        // If Shift held, move Y (Pan Price)
+                        if(e.shiftKey) {
+                            const pricePerPx = (this.maxP - this.minP) / this.height;
+                            this.view.shiftY += dy * pricePerPx;
+                            this.view.autoScale = false;
+                        } else {
+                            // Standard Pan (Time)
+                            this.view.offset += dx / this.view.zoomX;
+                            if(this.view.offset < 0) this.view.offset = 0;
+                        }
+                        this.draw();
+                        return;
+                    }
+                    
+                    // Just updating crosshair
+                    this.draw();
+                });
+
+                // Mouse Wheel (Zoom)
+                el.addEventListener('wheel', e => {
+                    e.preventDefault();
+                    
+                    // Zoom X (Width)
+                    const dir = Math.sign(e.deltaY);
+                    const speed = 0.5;
+                    this.view.zoomX += (dir * -1 * speed);
+                    
+                    // Limits
+                    if(this.view.zoomX < 2) this.view.zoomX = 2; // Thin
+                    if(this.view.zoomX > 100) this.view.zoomX = 100; // Wide
+                    
+                    this.draw();
+                }, {passive:false});
+
+                // Double Click Scale to Reset
+                el.addEventListener('dblclick', e => {
+                    const rect = el.getBoundingClientRect();
+                    if(e.clientX - rect.left > this.width - CONFIG.scaleWidth) {
+                        this.view.autoScale = true;
+                        this.view.scaleY = 1.0;
+                        this.view.shiftY = 0;
+                        this.draw();
+                    }
+                });
+
+                window.addEventListener('resize', () => this.resize());
+            }
+
+            resize() {
+                this.width = this.dom.wrap.clientWidth;
+                this.height = this.dom.wrap.clientHeight;
+                const dpr = window.devicePixelRatio || 1;
+                this.dom.cvs.width = this.width * dpr;
+                this.dom.cvs.height = this.height * dpr;
+                this.dom.ctx.scale(dpr, dpr);
+                this.draw();
+            }
+
+            // --- DATA ---
             async setTF(tf, agg) {
-                this.state.timeframe = tf;
-                this.state.apiAgg = agg;
+                this.view.tf = tf; this.view.agg = agg;
                 document.querySelectorAll('.tf-btn').forEach(b => b.classList.remove('active'));
                 event.target.classList.add('active');
                 await this.fetchData();
             }
 
             async fetchData() {
-                this.dom.status.innerText = "Loading Data...";
+                this.dom.status.innerText = "Fetching...";
                 try {
-                    // Endpoint Logic
-                    let ep = 'histominute';
-                    let agg = this.state.apiAgg;
-                    if(agg >= 60) { ep = 'histohour'; agg = agg/60; }
-                    if(agg >= 24) { ep = 'histoday'; agg = 1; } // Crude simplification for demo
-
-                    const res = await fetch(`https://min-api.cryptocompare.com/data/v2/${ep}?fsym=PAXG&tsym=USD&limit=1000&aggregate=${agg}`);
+                    // CryptoCompare API
+                    let ep = 'histominute'; let agg = this.view.agg;
+                    if(agg >= 60) { ep = 'histohour'; agg /= 60; }
+                    if(agg >= 24) { ep = 'histoday'; agg = 1; }
+                    
+                    const res = await fetch(`https://min-api.cryptocompare.com/data/v2/${ep}?fsym=PAXG&tsym=USD&limit=2000&aggregate=${agg}`);
                     const json = await res.json();
                     
-                    if(json.Response !== "Success") throw new Error("API Limit");
-
-                    this.data = json.Data.Data.map(d => ({
-                        t: d.time, o: d.open, h: d.high, l: d.low, c: d.close
-                    }));
-                    
-                    // Initial Analysis
-                    this.calculateWaves();
-                    
-                    // Reset View
-                    this.state.scrollOffset = 0;
-                    const last = this.data[this.data.length-1];
-                    this.dom.price.innerText = `$${last.c.toFixed(2)}`;
-                    
-                    this.draw();
-
-                    // Connect Live Simulation for Updates
-                    this.startLiveUpdates();
-
-                } catch (e) {
-                    console.log("Fallback to Sim");
-                    this.startSimulation();
+                    if(json.Response === 'Success') {
+                        this.data = json.Data.Data.map(d => ({t:d.time, o:d.open, h:d.high, l:d.low, c:d.close}));
+                        this.view.offset = 0;
+                        this.view.autoScale = true; // Reset view on new data
+                        
+                        this.analyzeWaves();
+                        this.draw();
+                        
+                        const last = this.data[this.data.length-1];
+                        this.dom.price.innerText = last.c.toFixed(2);
+                        this.dom.status.innerText = "Live Market Data";
+                    }
+                } catch(e) {
+                    this.dom.status.innerText = "Simulation Mode";
+                    this.generateSimData();
                 }
             }
 
-            startLiveUpdates() {
-                if(this.timer) clearInterval(this.timer);
-                
-                // Simulate ticks (since we are on a static TF snapshot mostly)
-                this.timer = setInterval(() => {
-                    const last = this.data[this.data.length-1];
-                    // Random Walk
-                    const move = (Math.random()-0.5) * (this.state.timeframe === '1m' ? 0.5 : 2.0);
-                    last.c += move;
-                    if(last.c > last.h) last.h = last.c;
-                    if(last.c < last.l) last.l = last.c;
-
-                    this.dom.price.innerText = `$${last.c.toFixed(2)}`;
-                    this.dom.price.style.color = move > 0 ? CONFIG.upColor : CONFIG.downColor;
-                    
-                    // RE-CALCULATE WAVES ON EVERY TICK
-                    this.calculateWaves(); 
-                    this.draw();
-                }, 1000);
-            }
-
-            startSimulation() {
-                // Generate fake data if API fails
+            generateSimData() {
                 this.data = [];
                 let p = 2600;
                 for(let i=0; i<500; i++) {
                     let o = p;
-                    let c = o + (Math.random()-0.5)*10;
+                    let c = o + (Math.random()-0.5)*5;
                     this.data.push({t:i, o:o, c:c, h:Math.max(o,c)+1, l:Math.min(o,c)-1});
                     p=c;
                 }
-                this.calculateWaves();
-                this.draw();
-            }
-
-            // --- INTERACTION ---
-            initListeners() {
-                const c = this.dom.container;
-                
-                c.addEventListener('mousedown', e => {
-                    this.state.dragging = true;
-                    this.state.lastX = e.clientX;
-                    c.style.cursor = 'grabbing';
-                });
-                
-                window.addEventListener('mouseup', () => {
-                    this.state.dragging = false;
-                    c.style.cursor = 'crosshair';
-                });
-
-                c.addEventListener('mousemove', e => {
-                    const r = c.getBoundingClientRect();
-                    this.state.mouseX = e.clientX - r.left;
-                    this.state.mouseY = e.clientY - r.top;
-
-                    if(this.state.dragging) {
-                        const dx = e.clientX - this.state.lastX;
-                        this.state.lastX = e.clientX;
-                        this.state.scrollOffset += dx / this.state.zoom;
-                        if(this.state.scrollOffset < 0) this.state.scrollOffset = 0;
-                    }
-                    this.draw();
-                });
-
-                c.addEventListener('wheel', e => {
-                    e.preventDefault();
-                    this.state.zoom += (e.deltaY < 0 ? 1 : -1);
-                    if(this.state.zoom < 3) this.state.zoom = 3;
-                    if(this.state.zoom > 100) this.state.zoom = 100;
-                    this.draw();
-                }, {passive:false});
-
-                window.addEventListener('resize', () => this.resize());
-            }
-
-            resize() {
-                const c = this.dom.container;
-                this.state.width = c.clientWidth;
-                this.state.height = c.clientHeight;
-                this.dom.canvas.width = this.state.width;
-                this.dom.canvas.height = this.state.height;
+                this.analyzeWaves();
                 this.draw();
             }
         }
 
         const app = new App();
-
     </script>
 </body>
 </html>
